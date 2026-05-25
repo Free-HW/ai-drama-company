@@ -187,7 +187,6 @@ Shot 1（7s）
           messages: [{ role: 'user', content: prompt }],
           temperature: 0.85,
         }),
-        signal: AbortSignal.timeout(120000),
       });
       const json = await resp.json();
       const text = json?.choices?.[0]?.message?.content || '';
@@ -618,7 +617,14 @@ app.post('/api/agent/projects/:projectUuid/regenerate-script', async (req, res) 
   }
 });
 
+const _generatingSet = new Set();
+
 function triggerScriptGeneration(projectUuid, idea, episodeCount) {
+  if (_generatingSet.has(projectUuid)) {
+    console.log(`[AI Script] already generating ${projectUuid}, skip`);
+    return;
+  }
+  _generatingSet.add(projectUuid);
   (async () => {
     try {
       const giggle = new GiggleClient({
@@ -632,6 +638,8 @@ function triggerScriptGeneration(projectUuid, idea, episodeCount) {
     } catch (e) {
       console.error('[AI Script] generation failed:', e.message);
       await setStoryProjectStatus(db, { projectUuid, status: 'failed' });
+    } finally {
+      _generatingSet.delete(projectUuid);
     }
   })();
 }
