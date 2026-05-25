@@ -1,0 +1,2358 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My AI Drama Studio · 实时大屏</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Instrument+Serif:ital@0;1&family=Inter+Tight:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0B0B0C;
+    --bg-1: #111114;
+    --bg-2: #16161A;
+    --line: #1F1F24;
+    --line-2: #2A2A30;
+    --text: #F2F2F2;
+    --text-2: #A4A4AB;
+    --text-3: #5E5E66;
+    --gold: #E8B339;          /* 钱·产出 */
+    --gold-soft: rgba(232,179,57,.12);
+    --green: #4ADE80;         /* live · running */
+    --red: #F87171;            /* alert · cost */
+    --cyan: #60D8F5;
+    --display: 'Instrument Serif', 'Songti SC', serif;
+    --sans: 'Inter Tight', -apple-system, 'PingFang SC', sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg); color: var(--text); font-family: var(--sans); -webkit-font-smoothing: antialiased; min-height: 100vh; }
+  ::selection { background: var(--gold); color: #000; }
+  
+  /* ============= TOP BAR ============= */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 32px; border-bottom: 1px solid var(--line);
+    background: rgba(11,11,12,.85); backdrop-filter: blur(20px);
+    position: sticky; top: 0; z-index: 50;
+  }
+  .brand { display: flex; align-items: baseline; gap: 14px; }
+  .brand-mark {
+    width: 30px; height: 30px; border-radius: 6px;
+    background: linear-gradient(135deg, var(--gold) 0%, #9B7320 100%);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-family: var(--display); font-style: italic; font-size: 20px; color: #000;
+    transform: translateY(4px);
+  }
+  .brand-name { font-family: var(--display); font-size: 22px; font-style: italic; letter-spacing: .2px; }
+  .brand-sub { font-size: 12px; color: var(--text-3); font-family: var(--mono); margin-left: 4px; }
+  .top-meta { display: flex; align-items: center; gap: 28px; }
+  .live-dot { display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 11px; color: var(--green); letter-spacing: 1.5px; }
+  .live-dot::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 0 rgba(74,222,128,.6); animation: pulse 1.8s infinite; }
+  @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(74,222,128,.5);} 50% { box-shadow: 0 0 0 6px rgba(74,222,128,0);} }
+  .uptime { font-family: var(--mono); font-size: 11px; color: var(--text-3); letter-spacing: .5px; }
+  .clock { font-family: var(--mono); font-size: 11px; color: var(--text-2); letter-spacing: .5px; }
+
+  /* ============= HERO STRIP ============= */
+  .hero {
+    padding: 48px 32px 36px;
+    border-bottom: 1px solid var(--line);
+    background:
+      radial-gradient(ellipse 60% 70% at 50% 0%, rgba(232,179,57,.08), transparent 70%),
+      var(--bg);
+  }
+  .hero-eyebrow {
+    font-family: var(--mono); font-size: 11px; color: var(--text-3);
+    letter-spacing: 2px; margin-bottom: 18px; text-transform: uppercase;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .hero-eyebrow::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+  .hero-grid { display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr; gap: 0; }
+  .hero-cell { padding: 4px 32px 4px 0; border-right: 1px solid var(--line); }
+  .hero-cell:last-child { border-right: none; padding-right: 0; }
+  .hero-cell:first-child { padding-left: 0; }
+  .hero-label { font-family: var(--mono); font-size: 10px; color: var(--text-3); letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 14px; }
+  .hero-value {
+    font-family: var(--display); font-size: 84px; line-height: 1; font-weight: 400;
+    letter-spacing: -2px; color: var(--text); font-feature-settings: 'tnum';
+  }
+  .hero-value .currency { font-size: 38px; color: var(--text-2); vertical-align: top; margin-right: 4px; font-style: italic; }
+  .hero-value .accent { color: var(--gold); }
+  .hero-delta { margin-top: 14px; font-family: var(--mono); font-size: 12px; color: var(--text-2); display: flex; align-items: center; gap: 10px; }
+  .delta-up { color: var(--green); }
+  .delta-bar { display: inline-block; height: 3px; background: var(--line); flex: 1; max-width: 100px; position: relative; overflow: hidden; }
+  .delta-bar::after { content: ''; position: absolute; left: 0; top: 0; height: 100%; background: var(--gold); width: 73%; }
+
+  /* ============= MAIN GRID ============= */
+  .main {
+    display: grid; grid-template-columns: 320px 1fr 360px;
+    min-height: calc(100vh - 320px);
+  }
+  
+  /* ============= LEFT · AI TEAM ============= */
+  .pane-left {
+    border-right: 1px solid var(--line); padding: 28px 24px; background: var(--bg);
+    display: flex; flex-direction: column; gap: 20px;
+  }
+  .pane-title {
+    font-family: var(--mono); font-size: 10px; color: var(--text-3);
+    letter-spacing: 2px; text-transform: uppercase;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .pane-title-tag { color: var(--green); font-size: 9px; padding: 3px 7px; background: rgba(74,222,128,.1); border: 1px solid rgba(74,222,128,.25); }
+  
+  .agent-card {
+    padding: 16px 14px; border: 1px solid var(--line); background: var(--bg-1);
+    position: relative; transition: all .25s ease;
+  }
+  .agent-card:hover { border-color: var(--line-2); }
+  .agent-card.busy::before {
+    content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 2px;
+    background: var(--gold); box-shadow: 0 0 12px var(--gold);
+  }
+  .agent-card.idle::before {
+    content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 2px;
+    background: var(--text-3);
+  }
+  .agent-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .agent-name { font-family: var(--mono); font-size: 12px; font-weight: 500; letter-spacing: .5px; }
+  .agent-role { font-size: 10px; color: var(--text-3); font-family: var(--mono); }
+  .agent-task { font-size: 13px; color: var(--text); line-height: 1.5; margin-bottom: 12px; }
+  .agent-progress { height: 2px; background: var(--line); position: relative; overflow: hidden; }
+  .agent-progress > span { position: absolute; left: 0; top: 0; height: 100%; background: var(--gold); }
+  .agent-progress.idle > span { background: var(--text-3); }
+  .agent-meta { display: flex; justify-content: space-between; margin-top: 8px; font-family: var(--mono); font-size: 10px; color: var(--text-3); }
+
+  /* Cost ticker */
+  .cost-block {
+    margin-top: 12px; padding: 14px; background: var(--bg-1); border: 1px solid var(--line);
+  }
+  .cost-row { display: flex; justify-content: space-between; align-items: baseline; padding: 6px 0; border-bottom: 1px dashed var(--line); font-family: var(--mono); font-size: 11px; }
+  .cost-row:last-child { border-bottom: none; }
+  .cost-row .k { color: var(--text-3); }
+  .cost-row .v { color: var(--text); }
+  .cost-row.profit .v { color: var(--green); font-weight: 700; }
+
+  /* ============= CENTER · PRODUCTION WALL ============= */
+  .pane-center { padding: 28px 28px; background: var(--bg); overflow: hidden; }
+  .center-head { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 24px; }
+  .center-title { font-family: var(--display); font-size: 32px; font-style: italic; }
+  .center-sub { font-family: var(--mono); font-size: 11px; color: var(--text-3); margin-top: 6px; }
+  .filter-row { display: flex; gap: 0; border: 1px solid var(--line); }
+  .filter-row button { background: transparent; border: none; color: var(--text-3); padding: 7px 14px; font-family: var(--mono); font-size: 11px; cursor: pointer; border-right: 1px solid var(--line); letter-spacing: .5px; }
+  .filter-row button:last-child { border-right: none; }
+  .filter-row button.active { background: var(--gold); color: #000; }
+
+  .wall { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .ep {
+    background: var(--bg-1); border: 1px solid var(--line); overflow: hidden;
+    position: relative; aspect-ratio: 9/14; display: flex; flex-direction: column;
+    transition: all .25s ease; cursor: pointer;
+  }
+  .ep:hover { border-color: var(--gold); transform: translateY(-2px); }
+  .ep-thumb {
+    flex: 1; background-size: cover; background-position: center; position: relative;
+    overflow: hidden;
+  }
+  .ep-thumb::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(180deg, transparent 40%, rgba(0,0,0,.85) 100%);
+  }
+  .ep-status {
+    position: absolute; top: 8px; left: 8px; z-index: 2;
+    font-family: var(--mono); font-size: 9px; padding: 3px 7px; letter-spacing: .5px;
+    text-transform: uppercase;
+  }
+  .ep-status.live { background: var(--green); color: #000; }
+  .ep-status.rendering { background: var(--gold); color: #000; }
+  .ep-status.queued { background: var(--bg-2); color: var(--text-2); border: 1px solid var(--line-2); }
+  .ep-status.published { background: var(--cyan); color: #000; }
+  .ep-rev {
+    position: absolute; top: 8px; right: 8px; z-index: 2;
+    font-family: var(--mono); font-size: 10px; color: var(--text); 
+    background: rgba(0,0,0,.7); padding: 3px 6px; backdrop-filter: blur(4px);
+  }
+  .ep-info { padding: 10px 12px; background: var(--bg-1); position: relative; z-index: 2; }
+  .ep-show { font-size: 10px; color: var(--text-3); font-family: var(--mono); margin-bottom: 3px; letter-spacing: .3px; }
+  .ep-title { font-size: 13px; color: var(--text); font-weight: 500; line-height: 1.3; margin-bottom: 8px; height: 34px; overflow: hidden; }
+  .ep-bar { height: 2px; background: var(--line); position: relative; margin-bottom: 6px; }
+  .ep-bar > span { position: absolute; left: 0; top: 0; height: 100%; background: var(--gold); }
+  .ep-meta { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 10px; color: var(--text-3); }
+  .ep-thumb-text {
+    position: absolute; bottom: 8px; left: 8px; right: 8px; z-index: 3;
+    font-family: var(--mono); font-size: 9px; color: var(--text-2); letter-spacing: .3px;
+  }
+  /* Episode thumbs - using gradient + SVG patterns to mimic stills */
+  .ep1 .ep-thumb { background:
+    radial-gradient(ellipse at 30% 40%, rgba(232,179,57,.4), transparent 60%),
+    linear-gradient(135deg, #3D2817 0%, #1A0E08 100%);
+  }
+  .ep2 .ep-thumb { background:
+    radial-gradient(ellipse at 70% 30%, rgba(96,216,245,.3), transparent 60%),
+    linear-gradient(135deg, #1A2438 0%, #0A0F1A 100%);
+  }
+  .ep3 .ep-thumb { background:
+    radial-gradient(ellipse at 50% 50%, rgba(248,113,113,.3), transparent 60%),
+    linear-gradient(135deg, #3A1A1A 0%, #1A0808 100%);
+  }
+  .ep4 .ep-thumb { background:
+    radial-gradient(ellipse at 40% 60%, rgba(74,222,128,.25), transparent 60%),
+    linear-gradient(135deg, #1A2818 0%, #08120A 100%);
+  }
+  .ep5 .ep-thumb { background:
+    radial-gradient(ellipse at 60% 40%, rgba(232,179,57,.35), transparent 60%),
+    linear-gradient(135deg, #2C1F0A 0%, #14100A 100%);
+  }
+  .ep6 .ep-thumb { background:
+    radial-gradient(ellipse at 50% 30%, rgba(180,130,200,.3), transparent 60%),
+    linear-gradient(135deg, #2A1A2E 0%, #100818 100%);
+  }
+  .ep-thumb svg { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .35; }
+
+  /* ============= RIGHT · CASH FLOW ============= */
+  .pane-right {
+    border-left: 1px solid var(--line); padding: 28px 24px; background: var(--bg);
+    display: flex; flex-direction: column; gap: 24px;
+  }
+  .cash-now {
+    background: linear-gradient(180deg, var(--gold-soft) 0%, transparent 100%);
+    border: 1px solid rgba(232,179,57,.3); padding: 20px 18px;
+    position: relative; overflow: hidden;
+  }
+  .cash-now::before {
+    content: ''; position: absolute; top: -50%; right: -30%;
+    width: 200px; height: 200px;
+    background: radial-gradient(circle, var(--gold) 0%, transparent 70%);
+    opacity: .15; filter: blur(20px);
+  }
+  .cash-now-label { font-family: var(--mono); font-size: 10px; color: var(--gold); letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 12px; display: flex; justify-content: space-between; }
+  .cash-now-label .small-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--gold); animation: pulse-gold 1.5s infinite; }
+  @keyframes pulse-gold { 0%,100% { opacity: 1;} 50% { opacity: .3;} }
+  .cash-now-value { font-family: var(--display); font-size: 48px; line-height: 1; color: var(--text); letter-spacing: -1px; }
+  .cash-now-value .currency { font-size: 22px; color: var(--text-2); vertical-align: top; font-style: italic; margin-right: 3px; }
+  .cash-now-from { font-family: var(--mono); font-size: 11px; color: var(--text-2); margin-top: 12px; }
+  .cash-now-time { font-family: var(--mono); font-size: 10px; color: var(--text-3); margin-top: 4px; }
+
+  .timeline { position: relative; padding-left: 16px; }
+  .timeline::before { content: ''; position: absolute; left: 4px; top: 6px; bottom: 6px; width: 1px; background: var(--line); }
+  .tl-item { position: relative; padding-bottom: 18px; }
+  .tl-item:last-child { padding-bottom: 0; }
+  .tl-item::before {
+    content: ''; position: absolute; left: -16px; top: 4px;
+    width: 9px; height: 9px; background: var(--bg); border: 1px solid var(--text-3);
+    border-radius: 50%;
+  }
+  .tl-item.recent::before { border-color: var(--gold); background: var(--gold); }
+  .tl-time { font-family: var(--mono); font-size: 10px; color: var(--text-3); margin-bottom: 3px; }
+  .tl-amount { font-family: var(--mono); font-size: 13px; color: var(--text); font-weight: 500; }
+  .tl-amount .plus { color: var(--green); }
+  .tl-source { font-size: 11px; color: var(--text-2); margin-top: 2px; }
+
+  /* Platform split */
+  .platforms { display: flex; flex-direction: column; gap: 8px; }
+  .platform-row { display: flex; align-items: center; gap: 10px; font-size: 11px; }
+  .platform-name { width: 70px; color: var(--text-2); font-family: var(--mono); font-size: 11px; }
+  .platform-bar { flex: 1; height: 4px; background: var(--line); position: relative; overflow: hidden; }
+  .platform-bar > span { position: absolute; left: 0; top: 0; height: 100%; }
+  .platform-pct { width: 42px; text-align: right; font-family: var(--mono); font-size: 11px; color: var(--text); }
+
+  /* ============= BOTTOM CTA STRIP ============= */
+  .cta-strip {
+    border-top: 1px solid var(--line); background: var(--bg-1);
+    padding: 32px 32px;
+    display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr 240px;
+    gap: 32px; align-items: center;
+  }
+  .cta-pitch { }
+  .cta-eyebrow { font-family: var(--mono); font-size: 10px; color: var(--gold); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 10px; }
+  .cta-headline { font-family: var(--display); font-size: 26px; line-height: 1.2; font-style: italic; }
+  .cta-headline em { color: var(--gold); font-style: normal; font-family: var(--display); }
+  .cta-stat { }
+  .cta-stat-v { font-family: var(--display); font-size: 32px; line-height: 1; color: var(--text); font-style: italic; }
+  .cta-stat-l { font-family: var(--mono); font-size: 10px; color: var(--text-3); margin-top: 8px; letter-spacing: 1px; text-transform: uppercase; }
+  .cta-btn {
+    background: var(--gold); color: #000; border: none; padding: 18px 24px;
+    font-family: var(--mono); font-size: 13px; font-weight: 700; letter-spacing: 1px;
+    cursor: pointer; text-transform: uppercase; transition: all .2s ease;
+    display: flex; flex-direction: column; gap: 4px; align-items: flex-start; text-align: left;
+  }
+  .cta-btn:hover { background: #F5C751; transform: translateY(-2px); box-shadow: 0 8px 24px rgba(232,179,57,.25); }
+  .cta-btn .small { font-size: 10px; font-weight: 400; opacity: .65; letter-spacing: .5px; text-transform: none; }
+  
+  /* Scroll bar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--line-2); }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-3); }
+
+  /* Animated counter feel */
+  @keyframes tickerSlide {
+    0% { transform: translateY(0); }
+    20% { transform: translateY(0); }
+    25% { transform: translateY(-100%); }
+    45% { transform: translateY(-100%); }
+    50% { transform: translateY(-200%); }
+    70% { transform: translateY(-200%); }
+    75% { transform: translateY(-300%); }
+    95% { transform: translateY(-300%); }
+    100% { transform: translateY(0); }
+  }
+  .ticker { display: inline-block; overflow: hidden; height: 12px; vertical-align: top; }
+  .ticker-inner { animation: tickerSlide 12s infinite; }
+  .ticker-inner > div { height: 12px; line-height: 12px; }
+
+  /* ============= AI AGENT LIVE TERMINAL ============= */
+  .agent-terminal-wrap {
+    padding: 36px 32px 0;
+    border-bottom: 1px solid var(--line);
+    background:
+      radial-gradient(ellipse 80% 60% at 50% 0%, rgba(232,179,57,.05), transparent 70%),
+      var(--bg);
+  }
+  .terminal-eyebrow {
+    font-family: var(--mono); font-size: 11px; color: var(--text-3);
+    letter-spacing: 2px; text-transform: uppercase; margin-bottom: 18px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .terminal-eyebrow strong { color: var(--gold); font-weight: 500; letter-spacing: 2px; }
+  .terminal-eyebrow::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+
+  .terminal-header {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    margin-bottom: 20px;
+  }
+  .terminal-title-block { display: flex; align-items: baseline; gap: 14px; }
+  .terminal-title-icon { font-family: var(--mono); font-size: 18px; color: var(--green); }
+  .terminal-title {
+    font-family: var(--display); font-size: 28px; font-style: italic;
+    color: var(--text); letter-spacing: -.5px;
+  }
+  .terminal-sub {
+    font-size: 13px; color: var(--text-2); margin-top: 6px;
+    max-width: 640px; line-height: 1.5;
+  }
+
+  .pipeline-nav {
+    display: flex; gap: 0; margin-bottom: 18px;
+    border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+  }
+  .pipeline-step {
+    flex: 1; padding: 16px 20px; display: flex; align-items: center; gap: 10px;
+    border-right: 1px solid var(--line); position: relative; transition: all .3s ease;
+  }
+  .pipeline-step:last-child { border-right: none; }
+  .pipeline-step .ps-icon { font-size: 16px; opacity: .4; transition: opacity .3s ease; }
+  .pipeline-step .ps-label {
+    font-family: var(--mono); font-size: 12px; color: var(--text-3);
+    letter-spacing: 1px; text-transform: uppercase; transition: color .3s ease;
+  }
+  .pipeline-step.active { background: rgba(232,179,57,.06); }
+  .pipeline-step.active .ps-icon { opacity: 1; }
+  .pipeline-step.active .ps-label { color: var(--gold); }
+  .pipeline-step.active::after {
+    content: ''; position: absolute; left: 0; right: 0; bottom: -1px;
+    height: 2px; background: var(--gold);
+    box-shadow: 0 0 12px var(--gold);
+  }
+  .pipeline-step.done .ps-icon { opacity: 1; }
+  .pipeline-step.done .ps-label { color: var(--green); }
+
+  .terminal-window {
+    background: #08080A; border: 1px solid var(--line);
+    border-radius: 8px; overflow: hidden; margin-bottom: 24px;
+    box-shadow: 0 12px 48px rgba(0,0,0,.5);
+  }
+  .terminal-chrome {
+    display: flex; align-items: center; padding: 12px 16px;
+    background: #161618; border-bottom: 1px solid var(--line); position: relative;
+  }
+  .traffic-lights { display: flex; gap: 7px; }
+  .tl-dot { width: 12px; height: 12px; border-radius: 50%; }
+  .tl-red { background: #FF5F57; }
+  .tl-yellow { background: #FEBC2E; }
+  .tl-green { background: #28C840; }
+  .terminal-chrome-title {
+    position: absolute; left: 50%; transform: translateX(-50%);
+    font-family: var(--mono); font-size: 12px; color: var(--text-2);
+  }
+  .terminal-chrome-live {
+    margin-left: auto; font-family: var(--mono); font-size: 10px;
+    color: var(--green); letter-spacing: 1.5px; display: flex; align-items: center; gap: 6px;
+  }
+  .terminal-chrome-live::before {
+    content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--green);
+    animation: pulse 1.8s infinite;
+  }
+
+  .terminal-body {
+    height: 340px; padding: 16px 20px; overflow: hidden;
+    font-family: var(--mono); font-size: 13px; line-height: 1.85;
+    position: relative;
+    mask-image: linear-gradient(180deg, transparent 0%, #000 14%, #000 100%);
+    -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 14%, #000 100%);
+  }
+  .terminal-log { display: flex; flex-direction: column; }
+  .log-line { display: flex; gap: 14px; align-items: flex-start; padding: 1px 0; }
+  .log-tag {
+    flex-shrink: 0; padding: 1px 8px; border-radius: 3px;
+    font-size: 10px; letter-spacing: 1px; font-weight: 700;
+    line-height: 18px; align-self: center;
+  }
+  .log-tag.system { background: #2A2A30; color: #A4A4AB; }
+  .log-tag.user { background: var(--gold); color: #000; }
+  .log-tag.agent-a { background: #1A3A4A; color: var(--cyan); }
+  .log-tag.agent-b { background: #3A1A3A; color: #E879F9; }
+  .log-tag.agent-c { background: #2A1A4A; color: #A78BFA; }
+  .log-tag.agent-d { background: #3A2510; color: #FB923C; }
+  .log-tag.agent-e { background: #3A2D0A; color: var(--gold); }
+  .log-text { color: var(--green); white-space: pre-wrap; word-break: break-word; flex: 1; }
+  .log-text.system { color: #A4A4AB; font-style: italic; }
+  .log-text.user { color: var(--gold); font-weight: 500; }
+  .log-text .label { color: var(--cyan); }
+  .log-text.b .label { color: #E879F9; }
+  .log-text.c .label { color: #A78BFA; }
+  .log-text.d .label { color: #FB923C; }
+  .log-text.e .label { color: var(--gold); }
+  .log-text.complete { color: var(--gold); font-weight: 500; }
+  .log-text .ok { color: var(--green); }
+  .cursor {
+    display: inline-block; width: 8px; height: 14px; background: var(--green);
+    vertical-align: -2px; margin-left: 2px; animation: blink 1s infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .terminal-caption {
+    display: flex; gap: 32px; padding: 14px 0 28px;
+    font-family: var(--mono); font-size: 11px; color: var(--text-3);
+    letter-spacing: .5px; flex-wrap: wrap;
+  }
+  .terminal-caption span { display: flex; align-items: center; gap: 6px; }
+  .terminal-caption span::before { content: '▸'; color: var(--gold); }
+
+  /* ============= SHOWCASE WALL ============= */
+  .showcase-wrap {
+    padding: 56px 0 36px;
+    border-bottom: 1px solid var(--line);
+    background: var(--bg);
+  }
+  .showcase-eyebrow {
+    padding: 0 32px; margin-bottom: 18px;
+    font-family: var(--mono); font-size: 11px; color: var(--text-3);
+    letter-spacing: 2px; text-transform: uppercase;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .showcase-eyebrow strong { color: var(--gold); font-weight: 500; }
+  .showcase-eyebrow::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+
+  .showcase-header {
+    padding: 0 32px; margin-bottom: 32px;
+    display: flex; justify-content: space-between; align-items: flex-end;
+    gap: 32px;
+  }
+  .showcase-title {
+    font-family: var(--display); font-size: 44px; font-style: italic;
+    line-height: 1.05; letter-spacing: -1px;
+  }
+  .showcase-title em { color: var(--gold); font-style: italic; }
+  .showcase-subtitle {
+    font-size: 15px; color: var(--text-2); margin-top: 12px; max-width: 560px;
+    line-height: 1.55;
+  }
+  .showcase-stats {
+    display: flex; gap: 32px; font-family: var(--mono); font-size: 10px;
+    color: var(--text-3); letter-spacing: 1px; text-transform: uppercase;
+    flex-shrink: 0;
+  }
+  .showcase-stats strong {
+    color: var(--text); font-size: 26px; font-family: var(--display);
+    display: block; font-style: italic; font-weight: 400; margin-bottom: 4px;
+  }
+
+  .showcase-rail {
+    display: flex; gap: 16px; overflow-x: auto; padding: 8px 32px 24px;
+    scroll-snap-type: x mandatory; scroll-padding-left: 32px;
+  }
+  .showcase-rail::-webkit-scrollbar { height: 6px; }
+  .showcase-rail::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 3px; }
+  .showcase-rail::-webkit-scrollbar-thumb:hover { background: var(--text-3); }
+
+  .case-card {
+    flex: 0 0 280px; height: 400px;
+    background: var(--bg-1); border: 1px solid var(--line);
+    display: flex; flex-direction: column; overflow: hidden;
+    scroll-snap-align: start; cursor: pointer;
+    transition: all .3s cubic-bezier(.16,1,.3,1); position: relative;
+  }
+  .case-card:hover {
+    border-color: var(--gold); transform: translateY(-4px);
+    box-shadow: 0 12px 32px rgba(232,179,57,.15);
+  }
+  .case-thumb {
+    height: 240px; position: relative; overflow: hidden;
+  }
+  .case-thumb svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .case-thumb::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(180deg, transparent 40%, rgba(0,0,0,.6) 100%);
+    z-index: 1;
+  }
+  .case-creator {
+    position: absolute; top: 10px; left: 10px; z-index: 2;
+    padding: 4px 8px; background: rgba(0,0,0,.75); backdrop-filter: blur(6px);
+    font-family: var(--mono); font-size: 10px; color: var(--text);
+    display: flex; align-items: center; gap: 5px;
+  }
+  .case-revenue {
+    position: absolute; top: 10px; right: 10px; z-index: 2;
+    padding: 4px 10px; background: var(--gold); color: #000;
+    font-family: var(--mono); font-size: 11px; font-weight: 700;
+  }
+  .case-views {
+    position: absolute; bottom: 10px; left: 10px; right: 10px; z-index: 2;
+    font-family: var(--mono); font-size: 10px; color: var(--text);
+    display: flex; justify-content: space-between;
+  }
+  .case-info { padding: 14px; flex: 1; display: flex; flex-direction: column; justify-content: space-between; }
+  .case-title {
+    font-family: var(--display); font-size: 18px; font-style: italic;
+    color: var(--text); line-height: 1.25; margin-bottom: 8px;
+  }
+  .case-meta {
+    font-family: var(--mono); font-size: 10px; color: var(--text-3);
+    letter-spacing: .5px;
+  }
+  .case-hover-cta {
+    position: absolute; bottom: -42px; left: 0; right: 0;
+    padding: 12px; background: var(--gold); color: #000;
+    font-family: var(--mono); font-size: 11px; font-weight: 700;
+    text-align: center; letter-spacing: 1px;
+    transition: bottom .3s cubic-bezier(.16,1,.3,1);
+    z-index: 3;
+  }
+  .case-card:hover .case-hover-cta { bottom: 0; }
+
+  .showcase-caption {
+    padding: 8px 32px 0;
+    display: flex; gap: 32px; flex-wrap: wrap;
+    font-family: var(--mono); font-size: 11px; color: var(--text-3);
+    letter-spacing: .5px;
+  }
+  .showcase-caption span::before { content: '▸ '; color: var(--gold); }
+
+  /* ============= CASE STUDY MODAL ============= */
+  .modal-overlay {
+    position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,.92); backdrop-filter: blur(8px);
+    display: none; opacity: 0; transition: opacity .3s ease;
+    overflow-y: auto;
+  }
+  .modal-overlay.open { display: block; opacity: 1; }
+  .modal-overlay.open .modal-shell { transform: translateY(0); }
+
+  .modal-shell {
+    max-width: 1280px; margin: 32px auto;
+    background: var(--bg); border: 1px solid var(--line);
+    transform: translateY(20px); transition: transform .4s cubic-bezier(.16,1,.3,1);
+    position: relative;
+  }
+
+  .modal-topbar {
+    display: flex; align-items: center; gap: 24px;
+    padding: 18px 28px; border-bottom: 1px solid var(--line);
+    background: rgba(11,11,12,.95); backdrop-filter: blur(20px);
+    position: sticky; top: 0; z-index: 10;
+  }
+  .modal-close {
+    background: none; border: 1px solid var(--line); color: var(--text-2);
+    width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;
+    font-size: 18px; cursor: pointer; transition: all .2s ease; flex-shrink: 0;
+  }
+  .modal-close:hover { border-color: var(--gold); color: var(--gold); }
+
+  .creator-card {
+    display: flex; align-items: center; gap: 14px; flex: 1;
+  }
+  .creator-avatar {
+    width: 44px; height: 44px; border-radius: 50%; flex-shrink: 0;
+    border: 2px solid var(--line);
+    background: linear-gradient(135deg, var(--gold) 0%, #B27A1F 100%);
+  }
+  .creator-handle {
+    display: flex; align-items: center; gap: 8px;
+    font-family: var(--mono); font-size: 14px; color: var(--text); font-weight: 500;
+  }
+  .creator-meta {
+    font-family: var(--mono); font-size: 11px; color: var(--text-3);
+    margin-top: 3px; letter-spacing: .3px;
+  }
+  .creator-meta strong { color: var(--gold); font-weight: 500; }
+
+  .modal-cta-link {
+    font-family: var(--mono); font-size: 12px; color: var(--gold);
+    padding: 8px 14px; border: 1px solid rgba(232,179,57,.4);
+    cursor: pointer; transition: all .2s ease; letter-spacing: .5px;
+    background: none; flex-shrink: 0;
+  }
+  .modal-cta-link:hover { background: var(--gold); color: #000; }
+
+  .testimonial {
+    display: flex; gap: 24px; align-items: center;
+    padding: 24px 28px; border-bottom: 1px solid var(--line);
+    background: linear-gradient(90deg, rgba(232,179,57,.05), transparent);
+  }
+  .testimonial-video {
+    flex-shrink: 0; width: 200px; height: 120px;
+    position: relative; cursor: pointer; overflow: hidden;
+    background: linear-gradient(135deg, #4A2818 0%, #1A0A05 100%);
+  }
+  .testimonial-video svg { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .5; }
+  .testimonial-play {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 48px; height: 48px; border-radius: 50%; background: rgba(232,179,57,.9);
+    display: flex; align-items: center; justify-content: center;
+    color: #000; font-size: 18px;
+  }
+  .testimonial-time {
+    position: absolute; bottom: 6px; right: 6px;
+    padding: 2px 6px; background: rgba(0,0,0,.8);
+    font-family: var(--mono); font-size: 10px; color: var(--text);
+  }
+  .testimonial-text { flex: 1; }
+  .testimonial-quote {
+    font-family: var(--display); font-style: italic; font-size: 22px;
+    line-height: 1.4; color: var(--text);
+  }
+  .testimonial-attr {
+    font-family: var(--mono); font-size: 11px; color: var(--text-3);
+    margin-top: 8px; letter-spacing: .5px;
+  }
+
+  .modal-tabs {
+    display: flex; border-bottom: 1px solid var(--line);
+    background: var(--bg);
+  }
+  .modal-tab {
+    flex: 1; padding: 18px 16px; display: flex; align-items: center; justify-content: center;
+    gap: 10px; border: none; background: none; cursor: pointer;
+    border-right: 1px solid var(--line); position: relative;
+    transition: all .2s ease;
+  }
+  .modal-tab:last-child { border-right: none; }
+  .modal-tab .mt-icon { font-size: 14px; opacity: .5; }
+  .modal-tab .mt-label {
+    font-family: var(--mono); font-size: 12px; color: var(--text-3);
+    letter-spacing: 1px; text-transform: uppercase;
+  }
+  .modal-tab .mt-lock { font-size: 11px; opacity: .8; color: var(--gold); }
+  .modal-tab:hover { background: rgba(255,255,255,.02); }
+  .modal-tab:hover .mt-icon { opacity: 1; }
+  .modal-tab:hover .mt-label { color: var(--text); }
+  .modal-tab.active { background: rgba(232,179,57,.06); }
+  .modal-tab.active .mt-icon { opacity: 1; }
+  .modal-tab.active .mt-label { color: var(--gold); }
+  .modal-tab.active::after {
+    content: ''; position: absolute; left: 0; right: 0; bottom: -1px;
+    height: 2px; background: var(--gold);
+  }
+  .modal-tab .pulse-dot {
+    position: absolute; top: 12px; right: 16px;
+    width: 7px; height: 7px; border-radius: 50%; background: var(--gold);
+    animation: pulse-gold 1.5s infinite;
+  }
+
+  .tab-panel { display: none; padding: 32px 28px; }
+  .tab-panel.active { display: block; }
+
+  /* TAB 1: Script */
+  .script-layout { display: grid; grid-template-columns: 220px 1fr; gap: 28px; }
+  .ep-list-wrap {
+    border: 1px solid var(--line); max-height: 720px; overflow-y: auto;
+    background: var(--bg-1);
+  }
+  .ep-list-header {
+    padding: 14px 16px; border-bottom: 1px solid var(--line);
+    font-family: var(--mono); font-size: 10px; color: var(--text-3);
+    letter-spacing: 1.5px; text-transform: uppercase;
+    background: var(--bg-2); position: sticky; top: 0; z-index: 2;
+  }
+  .ep-item {
+    padding: 12px 16px; border-bottom: 1px solid var(--line);
+    cursor: pointer; transition: all .2s ease;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .ep-item:hover { background: rgba(232,179,57,.04); }
+  .ep-item.active { background: rgba(232,179,57,.1); border-left: 2px solid var(--gold); }
+  .ep-item .epn { font-family: var(--mono); font-size: 11px; color: var(--text); }
+  .ep-item .epdur { font-family: var(--mono); font-size: 10px; color: var(--text-3); }
+  .ep-item.active .epn { color: var(--gold); }
+
+  .script-content {
+    border: 1px solid var(--line); padding: 32px 36px;
+    max-height: 720px; overflow-y: auto;
+    background: var(--bg-1);
+  }
+  .script-head {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    margin-bottom: 28px; padding-bottom: 20px; border-bottom: 1px solid var(--line);
+    gap: 16px;
+  }
+  .script-title { font-family: var(--display); font-size: 28px; font-style: italic; }
+  .script-meta { font-family: var(--mono); font-size: 11px; color: var(--text-3); margin-top: 6px; }
+  .script-download {
+    padding: 8px 14px; border: 1px solid var(--line); color: var(--text-3);
+    font-family: var(--mono); font-size: 11px; cursor: not-allowed;
+    display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+    background: none;
+  }
+  .scene-head {
+    font-family: var(--mono); font-size: 11px; color: var(--gold);
+    letter-spacing: 2px; text-transform: uppercase; margin: 28px 0 14px;
+    padding-left: 12px; border-left: 2px solid var(--gold);
+  }
+  .scene-action {
+    font-family: var(--sans); font-style: italic; color: var(--text-2);
+    font-size: 14px; line-height: 1.7; margin: 14px 0;
+  }
+  .dialogue { margin: 16px 0; }
+  .dialogue-char {
+    font-family: var(--display); font-style: italic; font-size: 16px;
+    color: var(--gold); margin-bottom: 4px;
+  }
+  .dialogue-text {
+    font-size: 15px; color: var(--text); line-height: 1.6;
+    padding-left: 24px;
+  }
+  .dialogue-paren {
+    font-style: italic; color: var(--text-3); font-size: 13px;
+    padding-left: 24px; margin-top: 2px;
+  }
+
+  /* TAB 2: Casting */
+  .casting-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .char-card {
+    background: var(--bg-1); border: 1px solid var(--line);
+    overflow: hidden; transition: all .2s ease;
+  }
+  .char-card:hover { border-color: var(--gold); }
+  .char-portrait {
+    aspect-ratio: 1/1; position: relative; overflow: hidden;
+  }
+  .char-portrait svg { width: 100%; height: 100%; }
+  .char-info { padding: 14px 16px; }
+  .char-name {
+    font-family: var(--display); font-size: 20px; font-style: italic;
+    color: var(--text); margin-bottom: 4px;
+  }
+  .char-role {
+    display: inline-block; padding: 2px 8px; background: var(--gold-soft);
+    color: var(--gold); font-family: var(--mono); font-size: 10px;
+    letter-spacing: 1px; margin-bottom: 10px;
+  }
+  .char-tech { font-family: var(--mono); font-size: 10px; color: var(--text-3); line-height: 1.7; }
+  .char-tech span { color: var(--green); }
+
+  /* TAB 3: Storyboard */
+  .sb-header {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    margin-bottom: 24px;
+  }
+  .sb-title { font-family: var(--display); font-size: 24px; font-style: italic; }
+  .sb-meta { font-family: var(--mono); font-size: 11px; color: var(--text-3); margin-top: 6px; }
+  .sb-strip {
+    display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px;
+    margin-bottom: 24px;
+  }
+  .sb-shot {
+    background: var(--bg-1); border: 1px solid var(--line);
+    overflow: hidden; transition: all .2s ease;
+  }
+  .sb-shot:hover { border-color: var(--gold); }
+  .sb-frame {
+    aspect-ratio: 9/16; position: relative; overflow: hidden;
+  }
+  .sb-frame svg { width: 100%; height: 100%; }
+  .sb-num {
+    position: absolute; top: 6px; left: 6px;
+    font-family: var(--mono); font-size: 9px; color: var(--text);
+    background: rgba(0,0,0,.7); padding: 2px 5px;
+  }
+  .sb-dur {
+    position: absolute; top: 6px; right: 6px;
+    font-family: var(--mono); font-size: 9px; color: var(--gold);
+    background: rgba(0,0,0,.7); padding: 2px 5px;
+  }
+  .sb-cap { padding: 8px 10px; }
+  .sb-type { font-family: var(--mono); font-size: 9px; color: var(--text-3); letter-spacing: .5px; }
+  .sb-dialogue { font-size: 11px; color: var(--text-2); margin-top: 4px; line-height: 1.4; }
+
+  /* TAB 4: Render (LOCKED) */
+  .render-preview-wrap { position: relative; }
+  .render-preview {
+    aspect-ratio: 16/9; max-height: 480px; margin: 0 auto;
+    background: linear-gradient(135deg, #3D2817 0%, #1A0E08 100%);
+    position: relative; overflow: hidden; border: 1px solid var(--line);
+  }
+  .render-preview svg { width: 100%; height: 100%; }
+  .render-watermark {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%) rotate(-15deg);
+    font-family: var(--mono); font-size: 36px; color: rgba(232,179,57,.22);
+    letter-spacing: 8px; font-weight: 700; white-space: nowrap;
+    pointer-events: none; text-shadow: 0 0 20px rgba(232,179,57,.3);
+  }
+  .render-scanlines {
+    position: absolute; inset: 0;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,.02) 2px, rgba(255,255,255,.02) 3px);
+    pointer-events: none;
+  }
+  .render-queue {
+    margin-top: 28px; padding: 20px;
+    background: var(--bg-1); border: 1px solid var(--line);
+  }
+  .render-queue-head {
+    font-family: var(--mono); font-size: 11px; color: var(--text-3);
+    letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 16px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .render-queue-head .qstatus { color: var(--gold); }
+  .shot-grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 8px; margin-bottom: 18px; }
+  .shot-tile {
+    aspect-ratio: 1/1; background: var(--bg-2); border: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono); font-size: 11px; color: var(--text-3);
+  }
+  .shot-tile.done { background: rgba(74,222,128,.1); border-color: rgba(74,222,128,.4); color: var(--green); }
+  .shot-tile.locked {
+    background: rgba(232,179,57,.12); border: 1px solid var(--gold);
+    color: var(--gold); font-size: 14px;
+    animation: pulse-gold 1.5s infinite;
+  }
+  .render-cta {
+    width: 100%; padding: 16px; background: var(--bg-2);
+    border: 1px solid var(--gold); color: var(--gold);
+    font-family: var(--mono); font-size: 13px; letter-spacing: 1px;
+    text-transform: uppercase; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    transition: all .25s ease;
+  }
+  .render-cta:hover {
+    background: var(--gold); color: #000;
+    box-shadow: 0 8px 24px rgba(232,179,57,.25);
+  }
+
+  /* TAB 5: Distribute (LOCKED) */
+  .distribute-wrap { position: relative; min-height: 400px; }
+  .distribute-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;
+    filter: blur(8px); pointer-events: none; opacity: .55;
+  }
+  .dist-card {
+    aspect-ratio: 1/1.2; background: var(--bg-1); border: 1px solid var(--line);
+    padding: 20px; display: flex; flex-direction: column; justify-content: space-between;
+  }
+  .dist-card-plat { font-family: var(--mono); font-size: 14px; color: var(--text); }
+  .dist-card-stat { font-family: var(--display); font-style: italic; font-size: 32px; }
+  .dist-locked-overlay {
+    position: absolute; inset: 0;
+    background: linear-gradient(180deg, transparent 20%, var(--bg) 65%);
+    display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
+    padding: 40px; text-align: center;
+  }
+  .dist-locked-overlay h3 {
+    font-family: var(--display); font-style: italic; font-size: 28px;
+    color: var(--text); margin-bottom: 10px;
+  }
+  .dist-locked-overlay h3 em { color: var(--gold); font-style: italic; }
+  .dist-locked-overlay p { color: var(--text-2); margin-bottom: 24px; font-size: 14px; max-width: 480px; }
+
+  /* PAYWALL */
+  .paywall-overlay {
+    position: fixed; inset: 0; z-index: 200;
+    background: rgba(0,0,0,.88); backdrop-filter: blur(12px);
+    display: none; opacity: 0; transition: opacity .3s ease;
+    align-items: center; justify-content: center; padding: 24px;
+    overflow-y: auto;
+  }
+  .paywall-overlay.open { display: flex; opacity: 1; }
+  .paywall-overlay.open .paywall-card { transform: translateY(0) scale(1); opacity: 1; }
+
+  .paywall-card {
+    max-width: 580px; width: 100%; margin: auto;
+    background: linear-gradient(180deg, #16161A 0%, #0F0F12 100%);
+    border: 1px solid rgba(232,179,57,.3);
+    padding: 44px 40px; position: relative;
+    transform: translateY(40px) scale(.96); opacity: 0;
+    transition: all .4s cubic-bezier(.16,1,.3,1);
+    box-shadow: 0 20px 80px rgba(0,0,0,.6), 0 0 80px rgba(232,179,57,.08);
+  }
+  .paywall-card::before {
+    content: ''; position: absolute; top: -1px; left: -1px; right: -1px; height: 2px;
+    background: linear-gradient(90deg, transparent, var(--gold), transparent);
+  }
+  .paywall-close {
+    position: absolute; top: 14px; right: 14px;
+    background: none; border: none; color: var(--text-3);
+    font-size: 22px; cursor: pointer; padding: 6px;
+    width: 32px; height: 32px;
+  }
+  .paywall-close:hover { color: var(--gold); }
+
+  .paywall-icon {
+    font-size: 36px; color: var(--gold); text-align: center;
+    margin-bottom: 18px;
+  }
+  .paywall-headline {
+    font-family: var(--display); font-style: italic; font-size: 32px;
+    line-height: 1.25; text-align: center; margin-bottom: 14px;
+    color: var(--text); letter-spacing: -.5px;
+  }
+  .paywall-headline em { color: var(--gold); font-style: italic; }
+  .paywall-sub {
+    text-align: center; color: var(--text-2); font-size: 15px;
+    line-height: 1.5; margin-bottom: 28px;
+  }
+
+  .opportunity-cost {
+    background: rgba(232,179,57,.06); border: 1px solid rgba(232,179,57,.25);
+    padding: 16px 20px; margin-bottom: 24px;
+    display: flex; align-items: center; gap: 16px;
+  }
+  .oc-icon { font-size: 28px; flex-shrink: 0; }
+  .oc-text { flex: 1; }
+  .oc-headline { font-family: var(--mono); font-size: 10px; color: var(--gold); letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 4px; }
+  .oc-body { color: var(--text); font-size: 13px; line-height: 1.5; }
+  .oc-body strong { color: var(--gold); font-family: var(--display); font-style: italic; font-size: 22px; font-weight: 400; }
+
+  .paywall-features {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+    margin-bottom: 24px;
+  }
+  .pw-feature {
+    text-align: center; padding: 16px 8px;
+    background: var(--bg); border: 1px solid var(--line);
+  }
+  .pw-feature .pwf-icon { font-size: 20px; margin-bottom: 8px; }
+  .pw-feature .pwf-title { font-family: var(--mono); font-size: 11px; color: var(--text); font-weight: 700; margin-bottom: 6px; letter-spacing: .5px; }
+  .pw-feature .pwf-sub { font-size: 10px; color: var(--text-3); line-height: 1.4; }
+
+  .clone-option {
+    border: 1px solid rgba(232,179,57,.3); padding: 16px 20px;
+    margin-bottom: 24px; display: flex; align-items: center; gap: 14px;
+    cursor: pointer; transition: all .2s ease;
+    background: rgba(232,179,57,.04);
+  }
+  .clone-option:hover { background: rgba(232,179,57,.08); border-color: var(--gold); }
+  .clone-checkbox {
+    width: 22px; height: 22px; border: 2px solid var(--gold);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; transition: all .2s ease;
+  }
+  .clone-checkbox.checked { background: var(--gold); }
+  .clone-checkbox.checked::after { content: '✓'; color: #000; font-weight: 700; font-size: 14px; }
+  .clone-text { flex: 1; }
+  .clone-title { font-size: 14px; color: var(--text); font-weight: 500; margin-bottom: 3px; }
+  .clone-title em { color: var(--gold); font-style: normal; font-family: var(--mono); font-size: 12px; }
+  .clone-sub { font-size: 12px; color: var(--text-3); line-height: 1.4; }
+
+  .paywall-price {
+    text-align: center; margin-bottom: 20px;
+  }
+  .pw-price-big {
+    font-family: var(--display); font-style: italic; font-size: 60px;
+    color: var(--gold); line-height: 1; letter-spacing: -2px;
+  }
+  .pw-price-sub {
+    font-family: var(--mono); font-size: 11px; color: var(--text-3);
+    margin-top: 8px; letter-spacing: .5px;
+  }
+
+  .paywall-cta {
+    width: 100%; padding: 18px; background: var(--gold); color: #000;
+    border: none; font-family: var(--mono); font-size: 14px; font-weight: 700;
+    letter-spacing: 1.5px; text-transform: uppercase; cursor: pointer;
+    transition: all .2s ease; margin-bottom: 14px;
+  }
+  .paywall-cta:hover { background: #F5C751; transform: translateY(-2px); box-shadow: 0 8px 24px rgba(232,179,57,.3); }
+
+  .paywall-secondary {
+    text-align: center; font-family: var(--mono); font-size: 12px;
+    color: var(--text-2); margin-bottom: 18px;
+  }
+  .paywall-secondary a { color: var(--gold); text-decoration: none; cursor: pointer; }
+  .paywall-secondary a:hover { text-decoration: underline; }
+
+  .paywall-trust {
+    text-align: center; font-family: var(--mono); font-size: 10px;
+    color: var(--text-3); letter-spacing: .5px; padding-top: 18px;
+    border-top: 1px solid var(--line);
+  }
+  .paywall-trust span { color: var(--text-2); }
+
+  @media (max-width: 1024px) {
+    .script-layout { grid-template-columns: 1fr; }
+    .casting-grid { grid-template-columns: repeat(2, 1fr); }
+    .sb-strip { grid-template-columns: repeat(3, 1fr); }
+    .paywall-features { grid-template-columns: 1fr; }
+    .modal-shell { margin: 0; }
+    .distribute-grid { grid-template-columns: repeat(2, 1fr); }
+    .shot-grid { grid-template-columns: repeat(6, 1fr); }
+  }
+
+  body.no-scroll { overflow: hidden; }
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <div class="brand">
+    <span class="brand-mark">S</span>
+    <span class="brand-name">My AI Drama Studio</span>
+    <span class="brand-sub">/ studio-08a3c · operator: you</span>
+  </div>
+  <div class="top-meta">
+    <span class="live-dot">LIVE · ALL SYSTEMS GREEN</span>
+    <span class="uptime">UPTIME 312D 04:21:08</span>
+    <span class="clock">2026·05·19 · 16:34:21 UTC+8</span>
+  </div>
+</div>
+
+<!-- ============= AI AGENT LIVE TERMINAL ============= -->
+<section class="agent-terminal-wrap">
+  <div class="terminal-eyebrow">
+    <strong>LIVE PRODUCTION PIPELINE</strong> · 你买的不是一个工具,是一条 24/7 自动运转的生产线
+  </div>
+
+  <div class="terminal-header">
+    <div>
+      <div class="terminal-title-block">
+        <span class="terminal-title-icon">&gt;_</span>
+        <span class="terminal-title">AI 短剧自动生产 · 实况</span>
+      </div>
+      <div class="terminal-sub">5 个 AI Agent 协同工作,从一句话创意 → 剧本 → 角色 → 分镜 → 视频 → 多平台分发。全程无人值守。</div>
+    </div>
+  </div>
+
+  <!-- Pipeline step nav -->
+  <div class="pipeline-nav" id="pipelineNav">
+    <div class="pipeline-step" data-stage="script">
+      <span class="ps-icon">✨</span>
+      <span class="ps-label">Script</span>
+    </div>
+    <div class="pipeline-step" data-stage="casting">
+      <span class="ps-icon">👥</span>
+      <span class="ps-label">Casting</span>
+    </div>
+    <div class="pipeline-step" data-stage="storyboard">
+      <span class="ps-icon">🎬</span>
+      <span class="ps-label">Storyboard</span>
+    </div>
+    <div class="pipeline-step" data-stage="render">
+      <span class="ps-icon">🎞</span>
+      <span class="ps-label">Render</span>
+    </div>
+    <div class="pipeline-step" data-stage="distribute">
+      <span class="ps-icon">📡</span>
+      <span class="ps-label">Distribute</span>
+    </div>
+  </div>
+
+  <!-- Terminal window -->
+  <div class="terminal-window">
+    <div class="terminal-chrome">
+      <div class="traffic-lights">
+        <span class="tl-dot tl-red"></span>
+        <span class="tl-dot tl-yellow"></span>
+        <span class="tl-dot tl-green"></span>
+      </div>
+      <span class="terminal-chrome-title">x2c-studio@director — ai-pipeline.sh</span>
+      <span class="terminal-chrome-live">LIVE</span>
+    </div>
+    <div class="terminal-body" id="terminalBody">
+      <div class="terminal-log" id="terminalLog"></div>
+    </div>
+  </div>
+
+  <div class="terminal-caption">
+    <span>1,847 productions completed this month</span>
+    <span>avg cycle 14 min</span>
+    <span>0 human interventions</span>
+    <span>$2.18 cost per episode</span>
+  </div>
+</section>
+
+<!-- HERO STRIP -->
+<section class="hero">
+  <div class="hero-eyebrow">Today · 这家公司今天的实况</div>
+  <div class="hero-grid">
+    <div class="hero-cell">
+      <div class="hero-label">Revenue · Today</div>
+      <div class="hero-value"><span class="currency">$</span><span class="accent">2,847</span><span style="font-size:38px; color: var(--text-3); margin-left: 6px;">.31</span></div>
+      <div class="hero-delta">
+        <span class="delta-up">▲ +38.2%</span>
+        <span style="color: var(--text-3);">vs yesterday</span>
+        <span class="delta-bar"></span>
+      </div>
+    </div>
+    <div class="hero-cell">
+      <div class="hero-label">Episodes Shipped</div>
+      <div class="hero-value">14<span style="font-size:32px; color: var(--text-3); margin-left: 8px;">/ 60</span></div>
+      <div class="hero-delta">
+        <span style="color: var(--gold);">● 6 rendering</span>
+        <span style="color: var(--text-3);">· 40 queued</span>
+      </div>
+    </div>
+    <div class="hero-cell">
+      <div class="hero-label">Active Shows</div>
+      <div class="hero-value">7</div>
+      <div class="hero-delta">
+        <span class="delta-up">+2</span>
+        <span style="color: var(--text-3);">launched this week</span>
+      </div>
+    </div>
+    <div class="hero-cell">
+      <div class="hero-label">Auto-Run · Untouched</div>
+      <div class="hero-value">23<span style="font-size:32px; color: var(--text-3); margin-left: 6px;">h</span></div>
+      <div class="hero-delta">
+        <span style="color: var(--green);">●</span>
+        <span style="color: var(--text-3);">You haven't logged in</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============= SHOWCASE WALL ============= -->
+<section class="showcase-wrap">
+  <div class="showcase-eyebrow">
+    <strong>CUSTOMER PRODUCTIONS</strong> · 1,847 studios shipped · these are real
+  </div>
+
+  <div class="showcase-header">
+    <div>
+      <div class="showcase-title">看看别人的工作室<br>正在<em>替他们赚什么钱</em></div>
+      <div class="showcase-subtitle">这些都是真实客户的作品。点开任何一部,看完整的剧本、角色、分镜——免费看完整个生产流程。</div>
+    </div>
+    <div class="showcase-stats">
+      <div><strong>1,847</strong>studios live</div>
+      <div><strong>112K</strong>episodes shipped</div>
+      <div><strong>$4.2M</strong>creator revenue · 30d</div>
+    </div>
+  </div>
+
+  <div class="showcase-rail" id="showcaseRail">
+    <!-- Cards injected by JS -->
+  </div>
+
+  <div class="showcase-caption">
+    <span>scroll → to see all 1,847 studios</span>
+    <span>click any production to see the full pipeline that built it</span>
+    <span>scripts / characters / storyboards fully unlocked · paywall only on final render</span>
+  </div>
+</section>
+
+<!-- MAIN GRID -->
+<section class="main">
+
+  <!-- LEFT · AI TEAM -->
+  <aside class="pane-left">
+    <div class="pane-title">
+      <span>Your AI Team · 4 Agents</span>
+      <span class="pane-title-tag">● 4 WORKING</span>
+    </div>
+
+    <div class="agent-card busy">
+      <div class="agent-head">
+        <span class="agent-name">SCRIPT-01</span>
+        <span class="agent-role">Showrunner</span>
+      </div>
+      <div class="agent-task">正在为《重生千金惊艳复仇》撰写第 18 集剧本 · 反转节点已布置</div>
+      <div class="agent-progress"><span style="width: 64%;"></span></div>
+      <div class="agent-meta">
+        <span>64% · ETA 2m 14s</span>
+        <span>tokens 8.2K</span>
+      </div>
+    </div>
+
+    <div class="agent-card busy">
+      <div class="agent-head">
+        <span class="agent-name">CAST-01</span>
+        <span class="agent-role">Casting</span>
+      </div>
+      <div class="agent-task">为《赌城暴富》锁定角色一致性立绘 · 主角 4/4 已生成</div>
+      <div class="agent-progress"><span style="width: 100%; background: var(--green);"></span></div>
+      <div class="agent-meta">
+        <span style="color: var(--green);">✓ DONE</span>
+        <span>handoff → SHOT-01</span>
+      </div>
+    </div>
+
+    <div class="agent-card busy">
+      <div class="agent-head">
+        <span class="agent-name">SHOT-01</span>
+        <span class="agent-role">Storyboard</span>
+      </div>
+      <div class="agent-task">渲染分镜 · EP07《合约背后》shot 9/14</div>
+      <div class="agent-progress"><span style="width: 64%;"></span></div>
+      <div class="agent-meta">
+        <span>64% · 1080p</span>
+        <span>queue 23 shots</span>
+      </div>
+    </div>
+
+    <div class="agent-card busy">
+      <div class="agent-head">
+        <span class="agent-name">DIST-01</span>
+        <span class="agent-role">Distribution</span>
+      </div>
+      <div class="agent-task">EP05 已发布至 TikTok / YouTube Shorts / Instagram</div>
+      <div class="agent-progress"><span style="width: 100%; background: var(--green);"></span></div>
+      <div class="agent-meta">
+        <span style="color: var(--green);">✓ LIVE on 3 platforms</span>
+        <span>2,401 views</span>
+      </div>
+    </div>
+
+    <div class="cost-block">
+      <div class="pane-title" style="margin-bottom: 12px;">
+        <span>Today's Unit Economics</span>
+      </div>
+      <div class="cost-row"><span class="k">Compute (ClawFarm)</span><span class="v">$ 312.04</span></div>
+      <div class="cost-row"><span class="k">Distribution fees</span><span class="v">$ 41.18</span></div>
+      <div class="cost-row"><span class="k">Storage / CDN</span><span class="v">$ 8.92</span></div>
+      <div class="cost-row profit"><span class="k">Net today</span><span class="v">+ $ 2,485.17</span></div>
+    </div>
+  </aside>
+
+  <!-- CENTER · PRODUCTION WALL -->
+  <main class="pane-center">
+    <div class="center-head">
+      <div>
+        <div class="center-title">Production Wall</div>
+        <div class="center-sub">14 shipped · 6 rendering · 40 queued · refreshing every 4s</div>
+      </div>
+      <div class="filter-row">
+        <button class="active">ALL</button>
+        <button>LIVE</button>
+        <button>RENDERING</button>
+        <button>QUEUED</button>
+      </div>
+    </div>
+
+    <div class="wall">
+      
+      <!-- EP 1 -->
+      <div class="ep ep1">
+        <div class="ep-thumb">
+          <span class="ep-status published">PUBLISHED</span>
+          <span class="ep-rev">+$ 421</span>
+          <svg viewBox="0 0 90 140" preserveAspectRatio="none">
+            <rect x="20" y="50" width="20" height="60" fill="#2A1A0A"/>
+            <rect x="50" y="55" width="20" height="55" fill="#3A2818"/>
+            <circle cx="30" cy="40" r="8" fill="#4A3528"/>
+            <circle cx="60" cy="42" r="8" fill="#4A3528"/>
+          </svg>
+          <div class="ep-thumb-text">▶ 2.4M views · TikTok trending #38</div>
+        </div>
+        <div class="ep-info">
+          <div class="ep-show">复仇千金的契约婚姻 · EP05</div>
+          <div class="ep-title">第5集·真相浮出水面</div>
+          <div class="ep-bar"><span style="width:100%; background: var(--cyan);"></span></div>
+          <div class="ep-meta"><span>RUNTIME 87s</span><span style="color: var(--cyan);">LIVE 14h</span></div>
+        </div>
+      </div>
+
+      <!-- EP 2 - rendering -->
+      <div class="ep ep2">
+        <div class="ep-thumb">
+          <span class="ep-status rendering">RENDERING 73%</span>
+          <svg viewBox="0 0 90 140" preserveAspectRatio="none">
+            <rect x="0" y="80" width="90" height="60" fill="#0F1A2C"/>
+            <circle cx="25" cy="65" r="10" fill="#1A2C44"/>
+            <circle cx="65" cy="60" r="12" fill="#1A2C44"/>
+            <line x1="0" y1="80" x2="90" y2="80" stroke="#60D8F5" stroke-width=".5" opacity=".3"/>
+          </svg>
+          <div class="ep-thumb-text">shot 9/14 · eta 4m 12s</div>
+        </div>
+        <div class="ep-info">
+          <div class="ep-show">合约背后 · EP07</div>
+          <div class="ep-title">第7集·豪门夜宴的局</div>
+          <div class="ep-bar"><span style="width:73%;"></span></div>
+          <div class="ep-meta"><span>1080p · 90s</span><span style="color: var(--gold);">RENDERING</span></div>
+        </div>
+      </div>
+
+      <!-- EP 3 - live, hot -->
+      <div class="ep ep3">
+        <div class="ep-thumb">
+          <span class="ep-status live">▶ LIVE</span>
+          <span class="ep-rev" style="background: var(--gold); color:#000;">+$ 1,284</span>
+          <svg viewBox="0 0 90 140" preserveAspectRatio="none">
+            <rect x="0" y="0" width="90" height="140" fill="#2A1010" opacity=".4"/>
+            <circle cx="45" cy="60" r="15" fill="#5A2A2A"/>
+            <rect x="20" y="80" width="50" height="40" fill="#3A1818"/>
+          </svg>
+          <div class="ep-thumb-text">🔥 5.8M views · 涨粉 +18K · CPM $4.20</div>
+        </div>
+        <div class="ep-info">
+          <div class="ep-show">赌城暴富 · EP02</div>
+          <div class="ep-title">第2集·一夜暴富的代价</div>
+          <div class="ep-bar"><span style="width:100%; background: var(--green);"></span></div>
+          <div class="ep-meta"><span>RUNTIME 72s</span><span style="color: var(--green);">▶ 5.8M</span></div>
+        </div>
+      </div>
+
+      <!-- EP 4 - queued -->
+      <div class="ep ep4">
+        <div class="ep-thumb">
+          <span class="ep-status queued">QUEUED · #3</span>
+          <svg viewBox="0 0 90 140" preserveAspectRatio="none">
+            <rect x="10" y="60" width="25" height="50" fill="#1A2818"/>
+            <rect x="55" y="65" width="25" height="45" fill="#1A2818"/>
+            <line x1="0" y1="110" x2="90" y2="110" stroke="#4ADE80" stroke-width=".3" opacity=".3"/>
+          </svg>
+          <div class="ep-thumb-text">scheduled: 17:08 · pipeline ready</div>
+        </div>
+        <div class="ep-info">
+          <div class="ep-show">朝阳逆袭 · EP04</div>
+          <div class="ep-title">第4集·总裁的专属分析师</div>
+          <div class="ep-bar"><span style="width:0%;"></span></div>
+          <div class="ep-meta"><span>SCRIPT ✓</span><span>WAITING</span></div>
+        </div>
+      </div>
+
+      <!-- EP 5 - script writing -->
+      <div class="ep ep5">
+        <div class="ep-thumb">
+          <span class="ep-status rendering" style="background: var(--cyan); color:#000;">SCRIPT 64%</span>
+          <svg viewBox="0 0 90 140" preserveAspectRatio="none">
+            <rect x="15" y="40" width="60" height="80" fill="#2A1F0A" opacity=".7"/>
+            <line x1="20" y1="55" x2="70" y2="55" stroke="#E8B339" stroke-width=".4" opacity=".5"/>
+            <line x1="20" y1="65" x2="65" y2="65" stroke="#E8B339" stroke-width=".4" opacity=".5"/>
+            <line x1="20" y1="75" x2="68" y2="75" stroke="#E8B339" stroke-width=".4" opacity=".5"/>
+          </svg>
+          <div class="ep-thumb-text">SCRIPT-01 writing · 2m 14s</div>
+        </div>
+        <div class="ep-info">
+          <div class="ep-show">重生千金惊艳复仇 · EP18</div>
+          <div class="ep-title">第18集·反派觉醒之夜</div>
+          <div class="ep-bar"><span style="width:18%; background: var(--cyan);"></span></div>
+          <div class="ep-meta"><span>STAGE 1/5</span><span style="color: var(--cyan);">SCRIPTING</span></div>
+        </div>
+      </div>
+
+      <!-- EP 6 - published -->
+      <div class="ep ep6">
+        <div class="ep-thumb">
+          <span class="ep-status published">PUBLISHED</span>
+          <span class="ep-rev">+$ 187</span>
+          <svg viewBox="0 0 90 140" preserveAspectRatio="none">
+            <circle cx="45" cy="70" r="20" fill="#3A2540"/>
+            <rect x="10" y="100" width="70" height="30" fill="#2A1A2E"/>
+          </svg>
+          <div class="ep-thumb-text">▶ 890K views · YouTube Shorts</div>
+        </div>
+        <div class="ep-info">
+          <div class="ep-show">乔峰传·古风篇 · EP02</div>
+          <div class="ep-title">第2集·恩仇录前夜</div>
+          <div class="ep-bar"><span style="width:100%; background: var(--cyan);"></span></div>
+          <div class="ep-meta"><span>RUNTIME 95s</span><span style="color: var(--cyan);">LIVE 4h</span></div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- RIGHT · CASH FLOW -->
+  <aside class="pane-right">
+    
+    <div>
+      <div class="cash-now">
+        <div class="cash-now-label">
+          <span>Just landed · 47 seconds ago</span>
+          <span class="small-dot"></span>
+        </div>
+        <div class="cash-now-value"><span class="currency">$</span>1,284<span style="font-size:22px; color: var(--text-3);">.18</span></div>
+        <div class="cash-now-from">from TikTok Creator Fund · 赌城暴富 EP02</div>
+        <div class="cash-now-time">→ wallet 54Jn...Tv6x · settled in 3.2s</div>
+      </div>
+    </div>
+
+    <div>
+      <div class="pane-title" style="margin-bottom: 18px;">
+        <span>Today's Income Stream</span>
+        <span style="font-family: var(--mono); font-size: 10px; color: var(--text-3);">$2,847.31</span>
+      </div>
+      <div class="timeline">
+        <div class="tl-item recent">
+          <div class="tl-time">16:33:34 · just now</div>
+          <div class="tl-amount"><span class="plus">+$ 1,284.18</span></div>
+          <div class="tl-source">TikTok · 赌城暴富 EP02 viral</div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-time">15:18:02</div>
+          <div class="tl-amount"><span class="plus">+$ 421.00</span></div>
+          <div class="tl-source">YouTube Shorts · 契约婚姻 EP05</div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-time">14:02:11</div>
+          <div class="tl-amount"><span class="plus">+$ 187.40</span></div>
+          <div class="tl-source">Instagram Reels · 乔峰传 EP02</div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-time">12:44:08</div>
+          <div class="tl-amount"><span class="plus">+$ 624.73</span></div>
+          <div class="tl-source">TikTok · 朝阳逆袭 EP03</div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-time">09:12:30</div>
+          <div class="tl-amount"><span class="plus">+$ 330.00</span></div>
+          <div class="tl-source">YouTube Shorts · 多剧集分成</div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="pane-title" style="margin-bottom: 14px;">
+        <span>Platform Mix · 30d</span>
+      </div>
+      <div class="platforms">
+        <div class="platform-row">
+          <span class="platform-name">TikTok</span>
+          <span class="platform-bar"><span style="width:62%; background: var(--gold);"></span></span>
+          <span class="platform-pct">62%</span>
+        </div>
+        <div class="platform-row">
+          <span class="platform-name">YouTube</span>
+          <span class="platform-bar"><span style="width:22%; background: var(--green);"></span></span>
+          <span class="platform-pct">22%</span>
+        </div>
+        <div class="platform-row">
+          <span class="platform-name">Instagram</span>
+          <span class="platform-bar"><span style="width:11%; background: var(--cyan);"></span></span>
+          <span class="platform-pct">11%</span>
+        </div>
+        <div class="platform-row">
+          <span class="platform-name">Facebook</span>
+          <span class="platform-bar"><span style="width:5%; background: var(--text-3);"></span></span>
+          <span class="platform-pct">5%</span>
+        </div>
+      </div>
+    </div>
+
+  </aside>
+
+</section>
+
+<!-- BOTTOM CTA STRIP -->
+<section class="cta-strip">
+  <div class="cta-pitch">
+    <div class="cta-eyebrow">What you're looking at</div>
+    <div class="cta-headline">这是一家<em>不需要你上班</em>的<br>AI 短剧公司。</div>
+  </div>
+  <div class="cta-stat">
+    <div class="cta-stat-v">$2,847</div>
+    <div class="cta-stat-l">avg daily revenue</div>
+  </div>
+  <div class="cta-stat">
+    <div class="cta-stat-v">23h</div>
+    <div class="cta-stat-l">untouched today</div>
+  </div>
+  <div class="cta-stat">
+    <div class="cta-stat-v" style="color: var(--gold);">$1,399</div>
+    <div class="cta-stat-l">one-time · ships your studio</div>
+  </div>
+  <button class="cta-btn">
+    <span>Launch My Studio →</span>
+    <span class="small">setup in 8 minutes · no code</span>
+  </button>
+</section>
+
+<!-- ============= CASE STUDY MODAL ============= -->
+<div class="modal-overlay" id="caseModal">
+  <div class="modal-shell">
+
+    <!-- Modal Top Bar -->
+    <div class="modal-topbar">
+      <button class="modal-close" id="modalClose">×</button>
+      <div class="creator-card">
+        <div class="creator-avatar" id="creatorAvatar"></div>
+        <div>
+          <div class="creator-handle" id="creatorHandle">🇮🇩 @drama_lab_jkt</div>
+          <div class="creator-meta" id="creatorMeta">joined Mar 2026 · 47 productions · <strong>$84,200 lifetime revenue</strong></div>
+        </div>
+      </div>
+      <button class="modal-cta-link" id="topCta">$1,399 · start your own →</button>
+    </div>
+
+    <!-- Testimonial -->
+    <div class="testimonial">
+      <div class="testimonial-video">
+        <svg viewBox="0 0 200 120" preserveAspectRatio="xMidYMid slice">
+          <ellipse cx="100" cy="55" rx="35" ry="40" fill="#5A3520"/>
+          <ellipse cx="100" cy="115" rx="80" ry="40" fill="#3A2010"/>
+        </svg>
+        <div class="testimonial-play">▶</div>
+        <div class="testimonial-time">0:32</div>
+      </div>
+      <div class="testimonial-text">
+        <div class="testimonial-quote" id="testimonialQuote">"我在雅加达,一个人,一个月做了 60 集短剧,赚了 $4,820。我什么都不会,只会点几下鼠标。"</div>
+        <div class="testimonial-attr" id="testimonialAttr">— @drama_lab_jkt · Jakarta, Indonesia · 47 productions on StoryClaw</div>
+      </div>
+    </div>
+
+    <!-- Modal Tabs -->
+    <div class="modal-tabs">
+      <button class="modal-tab active" data-tab="script">
+        <span class="mt-icon">✨</span>
+        <span class="mt-label">Script</span>
+      </button>
+      <button class="modal-tab" data-tab="casting">
+        <span class="mt-icon">👥</span>
+        <span class="mt-label">Casting</span>
+      </button>
+      <button class="modal-tab" data-tab="storyboard">
+        <span class="mt-icon">🎬</span>
+        <span class="mt-label">Storyboard</span>
+      </button>
+      <button class="modal-tab" data-tab="render">
+        <span class="mt-icon">🎞</span>
+        <span class="mt-label">Render</span>
+        <span class="mt-lock">🔒</span>
+        <span class="pulse-dot"></span>
+      </button>
+      <button class="modal-tab" data-tab="distribute">
+        <span class="mt-icon">📡</span>
+        <span class="mt-label">Distribute</span>
+        <span class="mt-lock">🔒</span>
+      </button>
+    </div>
+
+    <!-- TAB 1: SCRIPT -->
+    <div class="tab-panel active" data-panel="script">
+      <div class="script-layout">
+        <div class="ep-list-wrap">
+          <div class="ep-list-header">EPISODES · 60</div>
+          <div class="ep-item active"><span class="epn">EP 01 · 时钟逆转</span><span class="epdur">60s</span></div>
+          <div class="ep-item"><span class="epn">EP 02 · 撕碎婚约</span><span class="epdur">58s</span></div>
+          <div class="ep-item"><span class="epn">EP 03 · 第一笔反击</span><span class="epdur">62s</span></div>
+          <div class="ep-item"><span class="epn">EP 04 · 商场第一战</span><span class="epdur">59s</span></div>
+          <div class="ep-item"><span class="epn">EP 05 · 真相浮出水面</span><span class="epdur">65s</span></div>
+          <div class="ep-item"><span class="epn">EP 06 · 闺蜜的面具</span><span class="epdur">61s</span></div>
+          <div class="ep-item"><span class="epn">EP 07 · 合约背后</span><span class="epdur">63s</span></div>
+          <div class="ep-item"><span class="epn">EP 08 · 第一次心动</span><span class="epdur">58s</span></div>
+          <div class="ep-item"><span class="epn">EP 09 · 假戏真做</span><span class="epdur">60s</span></div>
+          <div class="ep-item"><span class="epn">EP 10 · 旧情人登场</span><span class="epdur">64s</span></div>
+          <div class="ep-item"><span class="epn">EP 11 · 商战白热化</span><span class="epdur">62s</span></div>
+          <div class="ep-item"><span class="epn">EP 12 · 致命的合约</span><span class="epdur">59s</span></div>
+          <div class="ep-item"><span class="epn">EP 13-60 · ...</span><span class="epdur">—</span></div>
+        </div>
+
+        <div class="script-content">
+          <div class="script-head">
+            <div>
+              <div class="script-title">EP 01 — 时钟逆转,恶女归来</div>
+              <div class="script-meta">60 seconds · 8 scenes · 14 dialogue lines · generated 2026-04-12</div>
+            </div>
+            <button class="script-download">▼ Download full PDF (60 EPs, 240K words) 🔒</button>
+          </div>
+
+          <div class="scene-head">SCENE 1 · 高楼天台 · 夜</div>
+          <div class="scene-action">顾清浅站在高楼天台的边缘,风吹乱她的长发。身后,陆景琛和白雪薇站在阴影里,脸上挂着冷笑。雷声轰鸣,雨水开始落下。</div>
+
+          <div class="dialogue">
+            <div class="dialogue-char">白雪薇</div>
+            <div class="dialogue-paren">(假惺惺地)</div>
+            <div class="dialogue-text">清浅姐,你别想不开啊。其实……景琛只是不爱你了而已。</div>
+          </div>
+
+          <div class="dialogue">
+            <div class="dialogue-char">陆景琛</div>
+            <div class="dialogue-paren">(冷漠地)</div>
+            <div class="dialogue-text">顾清浅,既然知道是这个结局,何必让自己难看?</div>
+          </div>
+
+          <div class="scene-action">顾清浅缓缓转身,眼神中充满绝望。她终于看清了这两个她最信任的人,真正的嘴脸。一只手从背后狠狠推来——</div>
+
+          <div class="dialogue">
+            <div class="dialogue-char">顾清浅</div>
+            <div class="dialogue-paren">(嘶吼)</div>
+            <div class="dialogue-text">你们……</div>
+          </div>
+
+          <div class="scene-action">画面切到顾清浅坠落的瞬间,慢镜头。她的眼泪与雨水混在一起。突然,一道刺眼的白光闪过——</div>
+
+          <div class="scene-head">SCENE 2 · 顾家闺房 · 晨</div>
+          <div class="scene-action">顾清浅猛地坐起,大口喘气。阳光透过窗帘洒在她脸上。她环顾四周,这是她少女时代的房间。床头的日历——2023 年 5 月 19 日。她的婚礼前一天。</div>
+
+          <div class="dialogue">
+            <div class="dialogue-char">顾清浅</div>
+            <div class="dialogue-paren">(颤抖地自语)</div>
+            <div class="dialogue-text">回来了……我居然回来了。</div>
+          </div>
+
+          <div class="scene-action">她缓缓低头,看着自己年轻的双手。然后,她抬起头,眼神从震惊变为冰冷。嘴角,慢慢扬起一抹笑。</div>
+
+          <div class="dialogue">
+            <div class="dialogue-char">顾清浅</div>
+            <div class="dialogue-paren">(冷冷地)</div>
+            <div class="dialogue-text">陆景琛,白雪薇——这一次,我不会再让你们好过了。</div>
+          </div>
+
+          <div class="scene-head">SCENE 3 · 顾家餐厅 · 早餐</div>
+          <div class="scene-action">顾清浅穿着精致的居家服走进餐厅。父亲、母亲、还有未婚夫陆景琛——所有人都在等她。陆景琛的表情温柔,完全看不出之后会做出那种事。</div>
+
+          <div class="dialogue">
+            <div class="dialogue-char">陆景琛</div>
+            <div class="dialogue-paren">(温柔地)</div>
+            <div class="dialogue-text">清浅,你来了。早餐你最爱的法式吐司。</div>
+          </div>
+
+          <div class="scene-action">顾清浅停下脚步,看着这个"未来会和闺蜜联手杀掉她"的男人。前世,她会感动得心跳加速。这一世——</div>
+
+          <div class="dialogue">
+            <div class="dialogue-char">顾清浅</div>
+            <div class="dialogue-paren">(微笑)</div>
+            <div class="dialogue-text">谢谢。不过——婚礼,我想取消。</div>
+          </div>
+
+          <div class="scene-action">餐厅瞬间安静。父亲手中的咖啡杯停在半空。陆景琛温柔的笑容,僵在了脸上。</div>
+
+          <div style="margin-top: 32px; padding-top: 20px; border-top: 1px solid var(--line); font-family: var(--mono); font-size: 11px; color: var(--text-3); text-align: center;">
+            ▼ 完整 12 个场景 · 后续 59 集全部解锁中 · 由 ScriptAgent 在 1m 22s 内生成
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 2: CASTING -->
+    <div class="tab-panel" data-panel="casting">
+      <div class="casting-grid">
+        <div class="char-card">
+          <div class="char-portrait">
+            <svg viewBox="0 0 200 200">
+              <defs>
+                <radialGradient id="gp1"><stop offset="0%" stop-color="#E8B339"/><stop offset="100%" stop-color="#3A2510"/></radialGradient>
+              </defs>
+              <rect width="200" height="200" fill="#2A1810"/>
+              <ellipse cx="100" cy="80" rx="42" ry="50" fill="url(#gp1)"/>
+              <ellipse cx="100" cy="180" rx="90" ry="60" fill="#1A0E08"/>
+              <circle cx="85" cy="70" r="3" fill="#000"/>
+              <circle cx="115" cy="70" r="3" fill="#000"/>
+            </svg>
+          </div>
+          <div class="char-info">
+            <div class="char-name">顾清浅</div>
+            <div class="char-role">主角 · LEAD</div>
+            <div class="char-tech">Voice ID: VC-8a3c<br>Trained on 12min reference<br>Consistency lock: <span>✓ 60 EPs</span></div>
+          </div>
+        </div>
+
+        <div class="char-card">
+          <div class="char-portrait">
+            <svg viewBox="0 0 200 200">
+              <defs>
+                <radialGradient id="gp2"><stop offset="0%" stop-color="#60D8F5"/><stop offset="100%" stop-color="#1A2C44"/></radialGradient>
+              </defs>
+              <rect width="200" height="200" fill="#0F1A2C"/>
+              <ellipse cx="100" cy="80" rx="42" ry="50" fill="url(#gp2)"/>
+              <ellipse cx="100" cy="180" rx="90" ry="60" fill="#08121A"/>
+            </svg>
+          </div>
+          <div class="char-info">
+            <div class="char-name">陆景琛</div>
+            <div class="char-role">男主 · MALE LEAD</div>
+            <div class="char-tech">Voice ID: VC-7b9d<br>Trained on 10min reference<br>Consistency lock: <span>✓ 60 EPs</span></div>
+          </div>
+        </div>
+
+        <div class="char-card">
+          <div class="char-portrait">
+            <svg viewBox="0 0 200 200">
+              <defs>
+                <radialGradient id="gp3"><stop offset="0%" stop-color="#F87171"/><stop offset="100%" stop-color="#3A1A1A"/></radialGradient>
+              </defs>
+              <rect width="200" height="200" fill="#2A1010"/>
+              <ellipse cx="100" cy="80" rx="42" ry="50" fill="url(#gp3)"/>
+              <ellipse cx="100" cy="180" rx="90" ry="60" fill="#1A0808"/>
+            </svg>
+          </div>
+          <div class="char-info">
+            <div class="char-name">白雪薇</div>
+            <div class="char-role">反派 · VILLAIN</div>
+            <div class="char-tech">Voice ID: VC-3e1a<br>Trained on 8min reference<br>Consistency lock: <span>✓ 60 EPs</span></div>
+          </div>
+        </div>
+
+        <div class="char-card">
+          <div class="char-portrait">
+            <svg viewBox="0 0 200 200">
+              <defs>
+                <radialGradient id="gp4"><stop offset="0%" stop-color="#A78BFA"/><stop offset="100%" stop-color="#2A1A4A"/></radialGradient>
+              </defs>
+              <rect width="200" height="200" fill="#1A1028"/>
+              <ellipse cx="100" cy="80" rx="42" ry="50" fill="url(#gp4)"/>
+              <ellipse cx="100" cy="180" rx="90" ry="60" fill="#0F0820"/>
+            </svg>
+          </div>
+          <div class="char-info">
+            <div class="char-name">沈墨白</div>
+            <div class="char-role">配角 · SUPPORT</div>
+            <div class="char-tech">Voice ID: VC-5c2f<br>Trained on 6min reference<br>Consistency lock: <span>✓ 60 EPs</span></div>
+          </div>
+        </div>
+
+        <div class="char-card">
+          <div class="char-portrait">
+            <svg viewBox="0 0 200 200">
+              <defs>
+                <radialGradient id="gp5"><stop offset="0%" stop-color="#4ADE80"/><stop offset="100%" stop-color="#1A2818"/></radialGradient>
+              </defs>
+              <rect width="200" height="200" fill="#0F1A0A"/>
+              <ellipse cx="100" cy="80" rx="42" ry="50" fill="url(#gp5)"/>
+              <ellipse cx="100" cy="180" rx="90" ry="60" fill="#08120A"/>
+            </svg>
+          </div>
+          <div class="char-info">
+            <div class="char-name">顾母</div>
+            <div class="char-role">家庭 · FAMILY</div>
+            <div class="char-tech">Voice ID: VC-2d8b<br>Trained on 5min reference<br>Consistency lock: <span>✓ 60 EPs</span></div>
+          </div>
+        </div>
+
+        <div class="char-card">
+          <div class="char-portrait">
+            <svg viewBox="0 0 200 200">
+              <defs>
+                <radialGradient id="gp6"><stop offset="0%" stop-color="#FB923C"/><stop offset="100%" stop-color="#3A2510"/></radialGradient>
+              </defs>
+              <rect width="200" height="200" fill="#2C1F0A"/>
+              <ellipse cx="100" cy="80" rx="42" ry="50" fill="url(#gp6)"/>
+              <ellipse cx="100" cy="180" rx="90" ry="60" fill="#14100A"/>
+            </svg>
+          </div>
+          <div class="char-info">
+            <div class="char-name">顾父</div>
+            <div class="char-role">家庭 · FAMILY</div>
+            <div class="char-tech">Voice ID: VC-9f4c<br>Trained on 5min reference<br>Consistency lock: <span>✓ 60 EPs</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: STORYBOARD -->
+    <div class="tab-panel" data-panel="storyboard">
+      <div class="sb-header">
+        <div>
+          <div class="sb-title">EP 01 · 12 shots · 60s runtime</div>
+          <div class="sb-meta">generated by StoryboardAgent in 3m 14s · 1080p · 24fps</div>
+        </div>
+      </div>
+
+      <div class="sb-strip">
+        <div class="sb-shot">
+          <div class="sb-frame">
+            <svg viewBox="0 0 90 160"><rect width="90" height="160" fill="#1A0F08"/><circle cx="45" cy="70" r="18" fill="#3A2515"/><rect x="0" y="120" width="90" height="40" fill="#0A0503"/></svg>
+            <span class="sb-num">SHOT 01</span>
+            <span class="sb-dur">4.2s</span>
+          </div>
+          <div class="sb-cap">
+            <div class="sb-type">WIDE · 高楼天台</div>
+            <div class="sb-dialogue">"清浅姐,你别想不开啊。"</div>
+          </div>
+        </div>
+
+        <div class="sb-shot">
+          <div class="sb-frame">
+            <svg viewBox="0 0 90 160"><rect width="90" height="160" fill="#2A1810"/><ellipse cx="45" cy="80" rx="25" ry="35" fill="#5A3520"/></svg>
+            <span class="sb-num">SHOT 02</span>
+            <span class="sb-dur">3.8s</span>
+          </div>
+          <div class="sb-cap">
+            <div class="sb-type">CLOSE-UP · 顾清浅</div>
+            <div class="sb-dialogue">绝望的眼神</div>
+          </div>
+        </div>
+
+        <div class="sb-shot">
+          <div class="sb-frame">
+            <svg viewBox="0 0 90 160"><rect width="90" height="160" fill="#0F1A2C"/><ellipse cx="45" cy="80" rx="22" ry="32" fill="#1A2C44"/></svg>
+            <span class="sb-num">SHOT 03</span>
+            <span class="sb-dur">4.5s</span>
+          </div>
+          <div class="sb-cap">
+            <div class="sb-type">CLOSE-UP · 陆景琛</div>
+            <div class="sb-dialogue">"何必让自己难看?"</div>
+          </div>
+        </div>
+
+        <div class="sb-shot">
+          <div class="sb-frame">
+            <svg viewBox="0 0 90 160"><rect width="90" height="160" fill="#0A0503"/><circle cx="45" cy="80" r="15" fill="#E8B339" opacity=".4"/></svg>
+            <span class="sb-num">SHOT 04</span>
+            <span class="sb-dur">2.1s</span>
+          </div>
+          <div class="sb-cap">
+            <div class="sb-type">EXTREME WIDE · 坠落</div>
+            <div class="sb-dialogue">慢镜头</div>
+          </div>
+        </div>
+
+        <div class="sb-shot">
+          <div class="sb-frame">
+            <svg viewBox="0 0 90 160"><rect width="90" height="160" fill="#3A2818"/><rect x="20" y="40" width="50" height="80" fill="#5A3520"/></svg>
+            <span class="sb-num">SHOT 05</span>
+            <span class="sb-dur">5.4s</span>
+          </div>
+          <div class="sb-cap">
+            <div class="sb-type">MEDIUM · 床上惊醒</div>
+            <div class="sb-dialogue">"回来了……"</div>
+          </div>
+        </div>
+
+        <div class="sb-shot">
+          <div class="sb-frame">
+            <svg viewBox="0 0 90 160"><rect width="90" height="160" fill="#2A1810"/><circle cx="45" cy="70" r="22" fill="#5A3520"/></svg>
+            <span class="sb-num">SHOT 06</span>
+            <span class="sb-dur">3.7s</span>
+          </div>
+          <div class="sb-cap">
+            <div class="sb-type">CLOSE-UP · 微笑</div>
+            <div class="sb-dialogue">嘴角扬起冷笑</div>
+          </div>
+        </div>
+
+        <div class="sb-shot">
+          <div class="sb-frame">
+            <svg viewBox="0 0 90 160"><rect width="90" height="160" fill="#2C1F0A"/><rect x="10" y="60" width="70" height="80" fill="#4A3520"/></svg>
+            <span class="sb-num">SHOT 07</span>
+            <span class="sb-dur">6.2s</span>
+          </div>
+          <div class="sb-cap">
+            <div class="sb-type">WIDE · 顾家餐厅</div>
+            <div class="sb-dialogue">早餐场景全景</div>
+          </div>
+        </div>
+
+        <div class="sb-shot">
+          <div class="sb-frame">
+            <svg viewBox="0 0 90 160"><rect width="90" height="160" fill="#0F1A2C"/><ellipse cx="45" cy="80" rx="22" ry="32" fill="#1A2C44"/></svg>
+            <span class="sb-num">SHOT 08</span>
+            <span class="sb-dur">4.1s</span>
+          </div>
+          <div class="sb-cap">
+            <div class="sb-type">MCU · 陆景琛温柔</div>
+            <div class="sb-dialogue">"清浅,你来了。"</div>
+          </div>
+        </div>
+
+        <div class="sb-shot">
+          <div class="sb-frame">
+            <svg viewBox="0 0 90 160"><rect width="90" height="160" fill="#2A1810"/><ellipse cx="45" cy="80" rx="22" ry="32" fill="#5A3520"/></svg>
+            <span class="sb-num">SHOT 09</span>
+            <span class="sb-dur">5.8s</span>
+          </div>
+          <div class="sb-cap">
+            <div class="sb-type">MCU · 顾清浅微笑</div>
+            <div class="sb-dialogue">"婚礼,我想取消。"</div>
+          </div>
+        </div>
+
+        <div class="sb-shot">
+          <div class="sb-frame">
+            <svg viewBox="0 0 90 160"><rect width="90" height="160" fill="#0F1A2C"/><ellipse cx="45" cy="80" rx="22" ry="32" fill="#1A2C44"/></svg>
+            <span class="sb-num">SHOT 10</span>
+            <span class="sb-dur">3.4s</span>
+          </div>
+          <div class="sb-cap">
+            <div class="sb-type">CLOSE-UP · 陆景琛震惊</div>
+            <div class="sb-dialogue">笑容僵住</div>
+          </div>
+        </div>
+
+        <div class="sb-shot">
+          <div class="sb-frame">
+            <svg viewBox="0 0 90 160"><rect width="90" height="160" fill="#2C1F0A"/><rect x="20" y="50" width="50" height="50" fill="#3A2510"/></svg>
+            <span class="sb-num">SHOT 11</span>
+            <span class="sb-dur">3.9s</span>
+          </div>
+          <div class="sb-cap">
+            <div class="sb-type">WIDE · 餐厅一片寂静</div>
+            <div class="sb-dialogue">咖啡杯停在半空</div>
+          </div>
+        </div>
+
+        <div class="sb-shot">
+          <div class="sb-frame">
+            <svg viewBox="0 0 90 160"><rect width="90" height="160" fill="#2A1810"/><ellipse cx="45" cy="80" rx="25" ry="35" fill="#5A3520"/><circle cx="50" cy="70" r="3" fill="#E8B339"/></svg>
+            <span class="sb-num">SHOT 12</span>
+            <span class="sb-dur">12.9s</span>
+          </div>
+          <div class="sb-cap">
+            <div class="sb-type">CLOSE-UP · END CARD</div>
+            <div class="sb-dialogue">下集预告 · 第2集</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 4: RENDER (LOCKED) -->
+    <div class="tab-panel" data-panel="render">
+      <div class="render-preview-wrap">
+        <div class="render-preview">
+          <svg viewBox="0 0 480 270" preserveAspectRatio="xMidYMid slice">
+            <defs>
+              <radialGradient id="renderGrad" cx="50%" cy="40%">
+                <stop offset="0%" stop-color="#5A3520"/>
+                <stop offset="100%" stop-color="#0A0503"/>
+              </radialGradient>
+            </defs>
+            <rect width="480" height="270" fill="url(#renderGrad)"/>
+            <ellipse cx="240" cy="135" rx="60" ry="80" fill="#3A2515" opacity=".9"/>
+            <ellipse cx="240" cy="120" rx="35" ry="45" fill="#7A4A28"/>
+            <circle cx="225" cy="115" r="3" fill="#000"/>
+            <circle cx="255" cy="115" r="3" fill="#000"/>
+            <rect x="150" y="200" width="180" height="70" fill="#1A0E08"/>
+          </svg>
+          <div class="render-watermark">PREVIEW · NOT YOURS</div>
+          <div class="render-scanlines"></div>
+        </div>
+      </div>
+
+      <div class="render-queue">
+        <div class="render-queue-head">
+          <span>RENDER QUEUE · EP 01 · 12 SHOTS</span>
+          <span class="qstatus">11 / 12 complete · waiting on final composite</span>
+        </div>
+        <div class="shot-grid">
+          <div class="shot-tile done">✓</div>
+          <div class="shot-tile done">✓</div>
+          <div class="shot-tile done">✓</div>
+          <div class="shot-tile done">✓</div>
+          <div class="shot-tile done">✓</div>
+          <div class="shot-tile done">✓</div>
+          <div class="shot-tile done">✓</div>
+          <div class="shot-tile done">✓</div>
+          <div class="shot-tile done">✓</div>
+          <div class="shot-tile done">✓</div>
+          <div class="shot-tile done">✓</div>
+          <div class="shot-tile locked">🔒</div>
+        </div>
+        <button class="render-cta" id="renderCta">
+          🔒  GENERATE FINAL VIDEO — UNLOCK TO RENDER
+        </button>
+      </div>
+    </div>
+
+    <!-- TAB 5: DISTRIBUTE (LOCKED) -->
+    <div class="tab-panel" data-panel="distribute">
+      <div class="distribute-wrap">
+        <div class="distribute-grid">
+          <div class="dist-card">
+            <div class="dist-card-plat">TikTok</div>
+            <div>
+              <div class="dist-card-stat">2.4M</div>
+              <div style="color: var(--text-3); font-family: var(--mono); font-size: 11px; margin-top: 4px;">views · 14 days live</div>
+            </div>
+          </div>
+          <div class="dist-card">
+            <div class="dist-card-plat">YouTube Shorts</div>
+            <div>
+              <div class="dist-card-stat">890K</div>
+              <div style="color: var(--text-3); font-family: var(--mono); font-size: 11px; margin-top: 4px;">views · CPM $4.20</div>
+            </div>
+          </div>
+          <div class="dist-card">
+            <div class="dist-card-plat">Instagram</div>
+            <div>
+              <div class="dist-card-stat">512K</div>
+              <div style="color: var(--text-3); font-family: var(--mono); font-size: 11px; margin-top: 4px;">reels views</div>
+            </div>
+          </div>
+          <div class="dist-card">
+            <div class="dist-card-plat">Facebook</div>
+            <div>
+              <div class="dist-card-stat">$4,820</div>
+              <div style="color: var(--text-3); font-family: var(--mono); font-size: 11px; margin-top: 4px;">total revenue</div>
+            </div>
+          </div>
+        </div>
+        <div class="dist-locked-overlay">
+          <div style="font-size: 36px; color: var(--gold); margin-bottom: 12px;">🔒</div>
+          <h3>解锁完整 <em>Distribution Playbook</em></h3>
+          <p>包含:多平台自动发布脚本 · 平台算法优化指南 · 标题生成模板 · 发布时机数据 · 受众投放策略</p>
+          <button class="render-cta" id="distCta" style="max-width: 360px;">UNLOCK TO ACCESS PLAYBOOK</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ============= PAYWALL ============= -->
+<div class="paywall-overlay" id="paywall">
+  <div class="paywall-card">
+    <button class="paywall-close" id="paywallClose">×</button>
+
+    <div class="paywall-icon">🔒</div>
+
+    <div class="paywall-headline">
+      你刚刚看到的,是<em>另一家工作室</em>的成品。<br>
+      下一部,可以是你的。
+    </div>
+    <div class="paywall-sub">
+      8 分钟交付,你的 AI 短剧公司就开始运转。剧本、角色、分镜、视频、发行,5 个 AI Agent 全部归你。
+    </div>
+
+    <div class="opportunity-cost">
+      <div class="oc-icon">📉</div>
+      <div class="oc-text">
+        <div class="oc-headline">机会成本</div>
+        <div class="oc-body">如果你 14 天前下单,跟着 @drama_lab_jkt 的 playbook 做,今天的累计收入约 <strong>$7,840</strong></div>
+      </div>
+    </div>
+
+    <div class="paywall-features">
+      <div class="pw-feature">
+        <div class="pwf-icon">🎬</div>
+        <div class="pwf-title">Same Pipeline</div>
+        <div class="pwf-sub">这部剧的 5 个 Agent 全部归你</div>
+      </div>
+      <div class="pw-feature">
+        <div class="pwf-icon">📺</div>
+        <div class="pwf-title">60 EPs / month</div>
+        <div class="pwf-sub">单工作室月产能,可叠加</div>
+      </div>
+      <div class="pw-feature">
+        <div class="pwf-icon">💰</div>
+        <div class="pwf-title">$2,847 / day</div>
+        <div class="pwf-sub">已上线工作室平均日收</div>
+      </div>
+    </div>
+
+    <div class="clone-option" id="cloneOption">
+      <div class="clone-checkbox checked" id="cloneCheckbox"></div>
+      <div class="clone-text">
+        <div class="clone-title">克隆 <em>@drama_lab_jkt</em> 的完整配置 <span style="color: var(--text-3); font-size: 11px;">(+$0)</span></div>
+        <div class="clone-sub">剧本风格 · 角色设定 · 分镜模板 · 发行 playbook · 你不用从零开始</div>
+      </div>
+    </div>
+
+    <div class="paywall-price">
+      <div class="pw-price-big">$1,399</div>
+      <div class="pw-price-sub">one-time · ships in 8 minutes · no subscription</div>
+    </div>
+
+    <button class="paywall-cta">→ LAUNCH MY STUDIO NOW</button>
+
+    <div class="paywall-secondary">
+      已经是客户? <a>用 wallet 登录 →</a>
+    </div>
+
+    <div class="paywall-trust">
+      <span>1,847 studios shipped</span> · <span>avg ROI 28 days</span> · <span>30-day money back</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============= JAVASCRIPT ============= -->
+<script>
+// =============================================================
+// PART 1: AI AGENT LIVE TERMINAL — streaming log animation
+// =============================================================
+const PROMPTS = [
+  { user: '一个程序员穿越到古代成为皇帝的故事,10 集短剧', show: '《代码皇帝》', genre: '穿越 / 古装 / 喜剧' },
+  { user: '重生千金归来,手撕渣男渣女,60 集甜宠', show: '《重生千金惊艳复仇》', genre: '重生 / 都市 / 甜宠' },
+  { user: '赌城少年逆袭成富豪,30 集爽剧', show: '《赌城少年》', genre: '逆袭 / 赌城 / 爽剧' },
+  { user: '豪门契约婚姻,先婚后爱,40 集', show: '《契约婚姻的真相》', genre: '豪门 / 契约 / 先婚后爱' },
+  { user: '战神归来,身份揭穿打脸全场,20 集', show: '《战神归来》', genre: '战神 / 身份 / 打脸' }
+];
+
+let promptIdx = 0;
+
+function buildScript(p) {
+  const s = p.show;
+  return [
+    ['system','SYSTEM','Ready. Awaiting director intent.','script'],
+    ['user','USER >',p.user,'script'],
+    ['agent-a','AGENT-A',['[ScriptAgent]','a','解析意图: ' + p.genre],'script'],
+    ['agent-a','AGENT-A',['[ScriptAgent]','a','调用 wanderer-script 生成大纲...'],'script'],
+    ['agent-a','AGENT-A',['[ScriptAgent]','a','✓ 大纲已生成 (10 集)'],'script'],
+    ['agent-a','AGENT-A',['[ScriptAgent]','a','EP01 · EP02 · EP03 · ... 全部分集剧本'],'script'],
+    ['agent-a','AGENT-A',['[ScriptAgent]','a','✓ ' + s + ' · 全部剧本完成 → CastingAgent'],'script'],
+    ['agent-b','AGENT-B',['[CastingAgent]','b','提取角色: 主角 / 男主 / 反派 / 配角'],'casting'],
+    ['agent-b','AGENT-B',['[CastingAgent]','b','生成角色立绘 (4/4) ████████ 100%'],'casting'],
+    ['agent-b','AGENT-B',['[CastingAgent]','b','训练 voice clone · 角色一致性 LoRA'],'casting'],
+    ['agent-b','AGENT-B',['[CastingAgent]','b','✓ 角色一致性锁定完成 → StoryboardAgent'],'casting'],
+    ['agent-c','AGENT-C',['[StoryboardAgent]','c','拆解分镜 EP01 (12 shots)'],'storyboard'],
+    ['agent-c','AGENT-C',['[StoryboardAgent]','c','渲染分镜图 ████░░░░ 50%'],'storyboard'],
+    ['agent-c','AGENT-C',['[StoryboardAgent]','c','渲染分镜图 ████████ 100%'],'storyboard'],
+    ['agent-c','AGENT-C',['[StoryboardAgent]','c','✓ 12 个分镜完成 → VideoAgent'],'storyboard'],
+    ['agent-d','AGENT-D',['[VideoAgent]','d','提交视频任务 → director-api/v2'],'render'],
+    ['agent-d','AGENT-D',['[VideoAgent]','d','渲染中... shot 1/12 — eta 58s'],'render'],
+    ['agent-d','AGENT-D',['[VideoAgent]','d','渲染中... shot 7/12 — eta 42s'],'render'],
+    ['agent-d','AGENT-D',['[VideoAgent]','d','渲染中... shot 12/12 — eta 4s'],'render'],
+    ['agent-d','AGENT-D',['[VideoAgent]','d','✓ EP01 渲染完成 (1m 34s, 1080p)'],'render'],
+    ['agent-d','AGENT-D',['[VideoAgent]','d','EP02-10: [parallel · 8 workers]'],'render'],
+    ['agent-d','AGENT-D',['[VideoAgent]','d','✓ 全部 10 集渲染完成 · 总时长 14m 22s'],'render'],
+    ['agent-e','AGENT-E',['[DistributionAgent]','e','准备多平台发布...'],'distribute'],
+    ['agent-e','AGENT-E',['[DistributionAgent]','e','→ TikTok       [posting...] ✓'],'distribute'],
+    ['agent-e','AGENT-E',['[DistributionAgent]','e','→ YouTube      [posting...] ✓'],'distribute'],
+    ['agent-e','AGENT-E',['[DistributionAgent]','e','→ Instagram    [posting...] ✓'],'distribute'],
+    ['agent-e','AGENT-E',['[DistributionAgent]','e','✓ 10 集已发布至 3 平台'],'distribute'],
+    ['system','SYSTEM','[Pipeline complete] ' + s + ' · 收入开始计入主面板 ↓','distribute'],
+  ];
+}
+
+const STAGES = ['script','casting','storyboard','render','distribute'];
+
+function setStage(stage) {
+  document.querySelectorAll('.pipeline-step').forEach(s => {
+    s.classList.remove('active','done');
+  });
+  const stageIdx = STAGES.indexOf(stage);
+  STAGES.forEach((st, i) => {
+    const el = document.querySelector(`.pipeline-step[data-stage="${st}"]`);
+    if (!el) return;
+    if (i < stageIdx) el.classList.add('done');
+    else if (i === stageIdx) el.classList.add('active');
+  });
+}
+
+const termBody = document.getElementById('terminalBody');
+const termLog = document.getElementById('terminalLog');
+
+function appendLogLine(item) {
+  const [tagClass, tagText, payload, stage] = item;
+  setStage(stage);
+
+  const line = document.createElement('div');
+  line.className = 'log-line';
+
+  const tag = document.createElement('span');
+  tag.className = 'log-tag ' + tagClass;
+  tag.textContent = tagText;
+  line.appendChild(tag);
+
+  const text = document.createElement('span');
+  text.className = 'log-text';
+  if (tagClass === 'system') text.classList.add('system');
+  if (tagClass === 'user') text.classList.add('user');
+  if (tagClass.startsWith('agent-')) {
+    text.classList.add(tagClass.split('-')[1]);
+  }
+
+  if (Array.isArray(payload)) {
+    const [label, agentLetter, body] = payload;
+    const lab = document.createElement('span');
+    lab.className = 'label';
+    lab.textContent = label + ' ';
+    text.appendChild(lab);
+    const bodySpan = document.createElement('span');
+    bodySpan.textContent = body;
+    if (body.includes('✓')) bodySpan.style.color = 'var(--green)';
+    text.appendChild(bodySpan);
+  } else {
+    text.textContent = payload;
+  }
+
+  line.appendChild(text);
+  termLog.appendChild(line);
+
+  // Auto-scroll to bottom
+  termBody.scrollTop = termBody.scrollHeight;
+  // Trim old lines
+  while (termLog.children.length > 40) {
+    termLog.removeChild(termLog.firstChild);
+  }
+}
+
+async function runPipeline() {
+  while (true) {
+    const p = PROMPTS[promptIdx % PROMPTS.length];
+    promptIdx++;
+    const script = buildScript(p);
+    for (const item of script) {
+      appendLogLine(item);
+      await new Promise(r => setTimeout(r, 800 + Math.random() * 700));
+    }
+    // Pause between cycles
+    await new Promise(r => setTimeout(r, 2500));
+    // Insert separator
+    const sep = document.createElement('div');
+    sep.style.cssText = 'height: 1px; background: var(--line); margin: 12px 0;';
+    termLog.appendChild(sep);
+  }
+}
+
+// Start pipeline after a brief delay
+// disabled by OpenClaw integration
+// setTimeout(runPipeline, 600);
+
+
+// =============================================================
+// PART 2: SHOWCASE WALL — render cards
+// =============================================================
+const CASES = [
+  { flag: '🇮🇩', handle: '@drama_lab_jkt', title: '《重生千金惊艳复仇》', eps: 60, rev: '4,820', views: '2.4M', days: 14, plat: 'TikTok #38', country: 'Jakarta, Indonesia', quote: '我在雅加达,一个人,一个月做了 60 集短剧,赚了 $4,820。我什么都不会,只会点几下鼠标。', palette: ['#4A2818','#1A0A05','#E8B339'] },
+  { flag: '🇵🇰', handle: '@karachi_creator', title: '《赌城少年》', eps: 30, rev: '8,140', views: '5.8M', days: 9, plat: 'YouTube viral', country: 'Karachi, Pakistan', quote: '巴基斯坦小城,我没钱请编剧、没钱请演员、没钱拍摄。StoryClaw 第一个月就让我赚了 $8,140。', palette: ['#3A1A1A','#1A0808','#F87171'] },
+  { flag: '🇲🇽', handle: '@reborn_queen_mx', title: '《契约婚姻的真相》', eps: 45, rev: '3,210', views: '1.8M', days: 22, plat: 'Instagram', country: 'Mexico City, MX', quote: '我以为做短剧需要团队 20 人。StoryClaw 让我用一台笔电完成了一切。', palette: ['#3A1A3A','#1A0820','#E879F9'] },
+  { flag: '🇻🇳', handle: '@saigon_films', title: '《战神归来》', eps: 20, rev: '2,940', views: '1.2M', days: 11, plat: 'TikTok VN', country: 'Ho Chi Minh, Vietnam', quote: '我是西贡的大学生。这是我的第一桶金。', palette: ['#1A2C44','#0A1428','#60D8F5'] },
+  { flag: '🇮🇳', handle: '@bombay_dramas', title: '《豪门夜宴》', eps: 40, rev: '5,670', views: '3.1M', days: 18, plat: 'YouTube Shorts', country: 'Mumbai, India', quote: '我每天只花 30 分钟检查 dashboard。剩下的时间继续上班。', palette: ['#2A1A4A','#100828','#A78BFA'] },
+  { flag: '🇵🇭', handle: '@manila_studio', title: '《重生之女王崛起》', eps: 50, rev: '6,200', views: '4.5M', days: 20, plat: 'TikTok PH', country: 'Manila, Philippines', quote: '马尼拉的家庭主妇,孩子睡着后我就开始"上班"——其实只是看 AI 干活。', palette: ['#3A2510','#14100A','#FB923C'] },
+  { flag: '🇪🇬', handle: '@cairo_dramas', title: '《沙漠王子的爱情》', eps: 25, rev: '1,840', views: '980K', days: 16, plat: 'Instagram MENA', country: 'Cairo, Egypt', quote: '中东市场太缺好内容了。StoryClaw 帮我填了这个空。', palette: ['#2C1F0A','#14100A','#E8B339'] },
+  { flag: '🇧🇷', handle: '@sao_paulo_lab', title: '《里约风暴》', eps: 35, rev: '3,450', views: '2.0M', days: 19, plat: 'YouTube BR', country: 'São Paulo, Brazil', quote: '巴西人爱看 drama,我现在每天在我的小公寓里"管理"我的 AI 短剧公司。', palette: ['#1A2818','#08120A','#4ADE80'] }
+];
+
+function caseThumbSvg(palette) {
+  const [bg, dark, accent] = palette;
+  return `
+    <svg viewBox="0 0 280 240" preserveAspectRatio="xMidYMid slice">
+      <defs>
+        <radialGradient id="g${palette[2].slice(1)}" cx="50%" cy="40%">
+          <stop offset="0%" stop-color="${accent}" stop-opacity=".5"/>
+          <stop offset="60%" stop-color="${bg}"/>
+          <stop offset="100%" stop-color="${dark}"/>
+        </radialGradient>
+      </defs>
+      <rect width="280" height="240" fill="url(#g${palette[2].slice(1)})"/>
+      <ellipse cx="100" cy="120" rx="35" ry="50" fill="${bg}" opacity=".8"/>
+      <ellipse cx="180" cy="115" rx="38" ry="52" fill="${bg}" opacity=".9"/>
+      <ellipse cx="140" cy="220" rx="160" ry="50" fill="${dark}"/>
+      <circle cx="100" cy="110" r="3" fill="#000"/>
+      <circle cx="180" cy="105" r="3" fill="#000"/>
+    </svg>
+  `;
+}
+
+const rail = document.getElementById('showcaseRail');
+CASES.forEach((c, idx) => {
+  const card = document.createElement('div');
+  card.className = 'case-card';
+  card.dataset.idx = idx;
+  card.innerHTML = `
+    <div class="case-thumb">
+      ${caseThumbSvg(c.palette)}
+      <div class="case-creator">${c.flag} ${c.handle}</div>
+      <div class="case-revenue">$${c.rev}</div>
+      <div class="case-views">
+        <span>▶ ${c.views} views</span>
+        <span>${c.days}d live</span>
+      </div>
+    </div>
+    <div class="case-info">
+      <div class="case-title">${c.title}</div>
+      <div class="case-meta">EP ${c.eps}/${c.eps} · ${c.plat}</div>
+    </div>
+    <div class="case-hover-cta">→ SEE HOW IT WAS MADE</div>
+  `;
+  card.addEventListener('click', () => openModal(idx));
+  rail.appendChild(card);
+});
+
+
+// =============================================================
+// PART 3: MODAL — open / close / tab switching
+// =============================================================
+const modal = document.getElementById('caseModal');
+const modalClose = document.getElementById('modalClose');
+const creatorHandle = document.getElementById('creatorHandle');
+const creatorMeta = document.getElementById('creatorMeta');
+const testQuote = document.getElementById('testimonialQuote');
+const testAttr = document.getElementById('testimonialAttr');
+
+function openModal(idx) {
+  const c = CASES[idx];
+  creatorHandle.textContent = `${c.flag} ${c.handle}`;
+  creatorMeta.innerHTML = `joined ${c.country.split(',')[0]} · ${c.eps} episodes · <strong>$${c.rev} lifetime revenue</strong>`;
+  testQuote.textContent = `"${c.quote}"`;
+  testAttr.textContent = `— ${c.handle} · ${c.country} · ${Math.floor(Math.random() * 40) + 12} productions on StoryClaw`;
+
+  modal.classList.add('open');
+  document.body.classList.add('no-scroll');
+
+  // Reset to Script tab
+  document.querySelectorAll('.modal-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelector('.modal-tab[data-tab="script"]').classList.add('active');
+  document.querySelector('.tab-panel[data-panel="script"]').classList.add('active');
+}
+
+function closeModal() {
+  modal.classList.remove('open');
+  document.body.classList.remove('no-scroll');
+}
+
+modalClose.addEventListener('click', closeModal);
+modal.addEventListener('click', (e) => {
+  if (e.target === modal) closeModal();
+});
+
+// Tab switching
+document.querySelectorAll('.modal-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    const target = tab.dataset.tab;
+    document.querySelectorAll('.modal-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.querySelector(`.tab-panel[data-panel="${target}"]`).classList.add('active');
+  });
+});
+
+// Episode list switching (Script tab)
+document.querySelectorAll('.ep-item').forEach(ep => {
+  ep.addEventListener('click', () => {
+    document.querySelectorAll('.ep-item').forEach(e => e.classList.remove('active'));
+    ep.classList.add('active');
+    // (Real implementation would swap script content; we leave EP01 visible)
+  });
+});
+
+
+// =============================================================
+// PART 4: PAYWALL — open / close
+// =============================================================
+const paywall = document.getElementById('paywall');
+const paywallClose = document.getElementById('paywallClose');
+const renderCta = document.getElementById('renderCta');
+const distCta = document.getElementById('distCta');
+const topCta = document.getElementById('topCta');
+const cloneCheckbox = document.getElementById('cloneCheckbox');
+
+function openPaywall() {
+  paywall.classList.add('open');
+}
+function closePaywall() {
+  paywall.classList.remove('open');
+}
+
+renderCta.addEventListener('click', openPaywall);
+distCta.addEventListener('click', openPaywall);
+topCta.addEventListener('click', openPaywall);
+paywallClose.addEventListener('click', closePaywall);
+paywall.addEventListener('click', (e) => {
+  if (e.target === paywall) closePaywall();
+});
+
+// Locked tab click — also fire paywall
+document.querySelectorAll('.modal-tab[data-tab="render"], .modal-tab[data-tab="distribute"]').forEach(t => {
+  // (we don't intercept tab click — let user view the locked teaser, then click the locked button)
+});
+
+// Clone option toggle
+cloneCheckbox.addEventListener('click', () => {
+  cloneCheckbox.classList.toggle('checked');
+});
+
+// ESC key
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    if (paywall.classList.contains('open')) closePaywall();
+    else if (modal.classList.contains('open')) closeModal();
+  }
+});
+</script>
+
+<script src="/app.js"></script>
+</body>
+</html>
