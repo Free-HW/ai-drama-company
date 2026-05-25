@@ -618,6 +618,7 @@ app.post('/api/agent/projects/:projectUuid/regenerate-script', async (req, res) 
 });
 
 const _generatingSet = new Set();
+const { spawn } = require('child_process');
 
 function triggerScriptGeneration(projectUuid, idea, episodeCount) {
   if (_generatingSet.has(projectUuid)) {
@@ -625,23 +626,24 @@ function triggerScriptGeneration(projectUuid, idea, episodeCount) {
     return;
   }
   _generatingSet.add(projectUuid);
-  (async () => {
-    try {
-      const giggle = new GiggleClient({
-        baseUrl: process.env.GIGGLE_BASE_URL,
-        apiKey: process.env.GIGGLE_API_KEY,
-        authMode: process.env.GIGGLE_AUTH_MODE || 'x-auth',
-      });
-      const episodes = await buildEpisodePlanAI({ idea, episodeCount: Number(episodeCount || 1), giggle });
-      await replaceProjectEpisodes(db, { projectUuid, episodes });
-      await setStoryProjectStatus(db, { projectUuid, status: 'planned' });
-    } catch (e) {
-      console.error('[AI Script] generation failed:', e.message);
-      await setStoryProjectStatus(db, { projectUuid, status: 'failed' });
-    } finally {
-      _generatingSet.delete(projectUuid);
-    }
-  })();
+
+  const scriptPath = require('path').join(__dirname, 'generate_script.js');
+  const child = spawn(process.execPath, [scriptPath, projectUuid, idea, String(episodeCount || 1)], {
+    detached: true,
+    stdio: ['ignore', 'inherit', 'inherit'],
+    env: process.env,
+    cwd: process.cwd(),
+  });
+  child.unref(); // 父进程退出不影响子进程
+
+  child.on('exit', (code) => {
+    _generatingSet.delete(projectUuid);
+    console.log(`[AI Script] subprocess exited code=${code} for ${projectUuid}`);
+  });
+  child.on('error', (e) => {
+    _generatingSet.delete(projectUuid);
+    console.error(`[AI Script] subprocess error: ${e.message}`);
+  });
 }
 
 // ── 启动时恢复 generating 状态的项目 ──
