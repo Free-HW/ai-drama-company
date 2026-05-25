@@ -136,14 +136,42 @@ async function buildEpisodePlanAI({ idea, episodeCount }) {
 
 创意：${idea}
 
-要求：
-- 每集时长约90-120秒
-- 剧情连续，有完整的起承转合
-- 每集包含：集标题、场景描述、人物对白、结尾钩子
-- 输出严格的JSON格式，不要有任何额外文字
+严格按照以下格式输出每一集，不要有任何额外说明文字：
 
-输出格式：
-{"episodes":[{"episode_no":1,"title":"第1集·xxx","outline":"本集概要","script":"完整剧本内容，包含场景和对白"},...]}`;
+### 🎬 第1集（目标：120秒）
+【剧情概要】
+（100-150字，描述本集核心剧情，交代人物关系和冲突）
+
+【角色表】
+角色名：角色描述（每行一个）
+
+【Shot-by-Shot脚本·15-17镜头·每镜5-8秒】
+Shot 1（7s）
+画面/事件：（具体场景描述）
+台词：角色名："台词内容"
+镜头调度：（镜头运动描述）
+画面Prompt：（英文风格的画面描述，用于AI生图）
+音频：（音效和背景音乐描述，结尾加"高通滤波，干净静音背景，无背景噪音，无低频隆隆声"）
+
+（继续Shot 2到Shot 15-17，格式相同）
+
+【高能台词】
+1. 角色名："台词"
+2. 角色名："台词"
+3. 角色名："台词"
+
+【音频设计】
+（整集音频风格描述，50字左右）
+
+【下集预告】
+（一句话预告下集内容）
+
+要求：
+- 剧情连续，每集有完整的起承转合
+- 每集15-17个Shot，每个Shot 5-8秒
+- 台词自然口语化，符合人物性格
+- 画面Prompt用中文描述，简洁有画面感
+- 所有${total}集按顺序输出，集与集之间用空行分隔`;
 
   try {
     const resp = await fetch(`${GATEWAY}/v1/chat/completions`, {
@@ -155,30 +183,44 @@ async function buildEpisodePlanAI({ idea, episodeCount }) {
       body: JSON.stringify({
         model: 'openclaw',
         messages: [{ role: 'user', content: prompt }],
-        temperature: 0.8,
+        temperature: 0.85,
       }),
     });
     const json = await resp.json();
     const text = json?.choices?.[0]?.message?.content || '';
-    // 提取 JSON
-    const match = text.match(/\{[\s\S]*\}/);
-    if (match) {
-      const parsed = JSON.parse(match[0]);
-      if (parsed.episodes && parsed.episodes.length > 0) {
-        return parsed.episodes.slice(0, total).map((ep, i) => ({
-          episode_no: ep.episode_no || i + 1,
-          title: ep.title || `第${i + 1}集`,
-          outline: ep.outline || '',
-          script_text: ep.script || ep.script_text || '',
-          status: 'scripted',
-        }));
-      }
+    if (text && text.includes('Shot')) {
+      const episodes = parseScriptText(text, total);
+      if (episodes.length > 0) return episodes;
     }
   } catch (e) {
     console.warn('[AI Script] LLM call failed:', e.message);
   }
 
   return buildLocalScriptFallback(idea, total);
+}
+
+function parseScriptText(text, total) {
+  // 按 "### 🎬 第X集" 分割
+  const parts = text.split(/(?=###\s*🎬\s*第\d+集)/);
+  const episodes = parts
+    .filter(p => p.trim().startsWith('###'))
+    .slice(0, total)
+    .map((part, i) => {
+      const titleMatch = part.match(/###\s*🎬\s*(第\d+集[^\n]*)/);
+      const title = titleMatch ? titleMatch[1].trim() : `第${i + 1}集`;
+
+      const outlineMatch = part.match(/【剧情概要】\s*([\s\S]*?)(?=【|$)/);
+      const outline = outlineMatch ? outlineMatch[1].trim().slice(0, 200) : '';
+
+      return {
+        episode_no: i + 1,
+        title,
+        outline,
+        script_text: part.trim(),
+        status: 'scripted',
+      };
+    });
+  return episodes;
 }
 
 function splitRawStory(raw, total) {
