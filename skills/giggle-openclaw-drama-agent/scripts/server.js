@@ -307,6 +307,7 @@ app.post('/api/agent/projects', async (req, res) => {
       language: language || 'zh-CN',
       aspect: aspect || '16:9',
       style: style || '',
+      episodeCount: Number(episodeCount || 1),
     });
     await upsertProjectBible(db, {
       projectUuid,
@@ -611,7 +612,7 @@ app.post('/api/agent/projects/:projectUuid/regenerate-script', async (req, res) 
     if (!project) return res.status(404).json({ ok: false, error: 'project not found' });
     await setStoryProjectStatus(db, { projectUuid, status: 'generating' });
     res.json({ ok: true, message: 'regenerating' });
-    triggerScriptGeneration(projectUuid, project.idea, project.episodes || 1);
+    triggerScriptGeneration(projectUuid, project.idea, project.episode_count || 1);
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
@@ -659,7 +660,7 @@ function triggerScriptGeneration(projectUuid, idea, episodeCount) {
         continue;
       }
       console.log(`[startup] resuming script generation for ${p.project_uuid}`);
-      triggerScriptGeneration(p.project_uuid, p.idea, p.episodes || 1);
+      triggerScriptGeneration(p.project_uuid, p.idea, p.episode_count || 1);
     }
   } catch (e) {
     console.warn('[startup] resume check failed:', e.message);

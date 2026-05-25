@@ -157,10 +157,10 @@ async function getRunLogsSince(db, runId, sinceId=0, limit=200) {
   return all(db, `SELECT * FROM run_logs WHERE run_id=? AND id>? ORDER BY id ASC LIMIT ?`, [runId, Number(sinceId||0), Number(limit||200)]);
 }
 
-async function createStoryProject(db, { projectUuid, name, idea, language, aspect, style }) {
+async function createStoryProject(db, { projectUuid, name, idea, language, aspect, style, episodeCount }) {
   const now = new Date().toISOString();
-  await run(db, `INSERT INTO story_projects (project_uuid,name,idea,language,aspect,style,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)`,
-    [projectUuid, name||'', idea||'', language||'zh-CN', aspect||'16:9', style||'', 'draft', now, now]);
+  await run(db, `INSERT INTO story_projects (project_uuid,name,idea,language,aspect,style,episode_count,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    [projectUuid, name||'', idea||'', language||'zh-CN', aspect||'16:9', style||'', Number(episodeCount||1), 'draft', now, now]);
 }
 
 async function upsertProjectBible(db, { projectUuid, worldSetting, tone, styleRules, relationshipNotes, rawJson }) {
