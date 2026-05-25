@@ -422,6 +422,16 @@
       box.innerHTML = `project_uuid: ${projectUuid}<br>characters: ${chars.length}<br>active mappings: ${mappings.length}<br>${mappingRows || 'no mappings yet'}`;
     }
 
+    // 如果项目正在生成剧本，显示等待状态并轮询
+    if (data.project?.status === 'generating' && eps.length === 0) {
+      wall.innerHTML = `<div class="agent-card idle" style="grid-column:1/-1;text-align:center;padding:40px;">
+        <div class="agent-task" style="font-size:14px;">⏳ AI 正在生成剧本，请稍候...</div>
+        <div style="margin-top:8px;font-size:11px;opacity:.5;">通常需要 30-60 秒</div>
+      </div>`;
+      setTimeout(() => renderStoryEpisodes(projectUuid), 5000);
+      return;
+    }
+
     wall.innerHTML = eps.map((ep, idx) => {
       const st = ep.status === 'completed'
         ? { cls: 'published', label: 'COMPLETED', pct: 100 }
@@ -430,28 +440,36 @@
           : ep.status === 'failed' || ep.status === 'partial_failed'
             ? { cls: 'queued', label: 'FAILED', pct: 10 }
             : { cls: 'queued', label: 'PLANNED', pct: 8 };
+      const preview = (ep.script_text || ep.outline || '').slice(0, 90);
       return `
-        <div class="ep ep${(idx % 6) + 1}">
+        <div class="ep ep${(idx % 6) + 1}" data-ep-no="${ep.episode_no}" style="cursor:pointer;" title="点击查看完整剧本">
           <div class="ep-thumb">
             <span class="ep-status ${st.cls}">${st.label}</span>
             <div class="ep-thumb-text">EP${ep.episode_no} · ${data.project?.name || ''}</div>
           </div>
           <div class="ep-info">
             <div class="ep-show">${ep.title || `第${ep.episode_no}集`}</div>
-            <div class="ep-title">${(ep.script_text || ep.outline || '').slice(0, 90)}</div>
+            <div class="ep-title" style="cursor:pointer;text-decoration:underline dotted;opacity:.8;" onclick="showScriptModal(event,${ep.episode_no})">${preview}…</div>
             <div class="ep-bar"><span style="width:${st.pct}%;"></span></div>
             <div class="ep-meta"><span>${ep.status || '-'}</span><span>${ep.giggle_project_id || '-'}</span></div>
-            <button id="run-ep-${ep.episode_no}" class="oclaw-btn" style="margin-top:8px; width:100%; font-size:11px;">生产 EP${ep.episode_no}</button>
+            <div style="display:flex;gap:6px;margin-top:8px;">
+              <button onclick="showScriptModal(event,${ep.episode_no})" class="oclaw-btn" style="flex:1;font-size:11px;background:rgba(232,179,57,.15);border-color:rgba(232,179,57,.4);">📄 查看剧本</button>
+              <button id="run-ep-${ep.episode_no}" class="oclaw-btn" style="flex:1;font-size:11px;">▶ 生产</button>
+            </div>
           </div>
         </div>
       `;
     }).join('') || '<div class="agent-card idle" style="grid-column:1/-1;"><div class="agent-task">该项目暂无分集数据</div></div>';
 
+    // Store episodes data for modal access
+    window._currentEpisodes = eps;
+    window._currentProjectName = data.project?.name || '';
+
     eps.forEach((ep) => {
       const btn = document.getElementById(`run-ep-${ep.episode_no}`);
       if (!btn) return;
       btn.disabled = ep.status === 'running';
-      btn.addEventListener('click', () => runEpisode(projectUuid, ep.episode_no));
+      btn.addEventListener('click', (e) => { e.stopPropagation(); runEpisode(projectUuid, ep.episode_no); });
     });
   }
 
@@ -725,3 +743,32 @@
 
   loadX2CShowcase();
 })();
+
+
+// ── 剧本弹窗 ──────────────────────────────────────────────
+function showScriptModal(e, epNo) {
+  if (e) e.stopPropagation();
+  const eps = window._currentEpisodes || [];
+  const ep = eps.find((x) => x.episode_no === epNo);
+  if (!ep) return;
+
+  let modal = document.getElementById('scriptModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'scriptModal';
+    modal.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;padding:20px;';
+    modal.innerHTML = `
+      <div style="background:#111;border:1px solid rgba(232,179,57,.3);border-radius:12px;max-width:720px;width:100%;max-height:85vh;display:flex;flex-direction:column;overflow:hidden;">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid rgba(255,255,255,.08);">
+          <div id="scriptModalTitle" style="font-size:15px;font-weight:700;color:#e8b339;"></div>
+          <button onclick="document.getElementById('scriptModal').remove()" style="background:none;border:1px solid rgba(255,255,255,.2);color:#fff;border-radius:6px;padding:4px 12px;cursor:pointer;font-size:13px;">✕ 关闭</button>
+        </div>
+        <div id="scriptModalBody" style="padding:20px;overflow-y:auto;flex:1;font-size:13px;line-height:1.8;color:#ccc;white-space:pre-wrap;font-family:monospace;"></div>
+      </div>`;
+    modal.addEventListener('click', (ev) => { if (ev.target === modal) modal.remove(); });
+    document.body.appendChild(modal);
+  }
+
+  document.getElementById('scriptModalTitle').textContent = `${window._currentProjectName || ''} · ${ep.title || `第${epNo}集`}`;
+  document.getElementById('scriptModalBody').textContent = ep.script_text || ep.outline || '（暂无剧本内容）';
+}

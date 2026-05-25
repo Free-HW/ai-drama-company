@@ -127,53 +127,125 @@ app.get('/api/x2c/projects/:id', async (req, res) => {
   }
 });
 
-function buildEpisodePlan({ idea, episodeCount }) {
+async function buildEpisodePlanAI({ idea, episodeCount }) {
   const total = Math.max(1, Number(episodeCount || 1));
-  const arcs = ['铺垫', '冲突升级', '反转', '高潮', '收束'];
-  const hooks = [
-    '突发事件打断日常',
-    '关键人物首次正面冲突',
-    '隐藏真相被提前触发',
-    '代价与抉择同时到来',
-    '情绪爆点后给出新悬念',
-  ];
-  const envs = ['清晨草原', '午后小镇', '夜雨街口', '废弃仓库', '山顶风口', '河谷营地'];
-  const goals = [
-    '保住当前局面',
-    '找到关键线索',
-    '争取盟友支持',
-    '阻止对手推进',
-    '完成最终选择',
-  ];
-  const episodes = [];
-  for (let i = 1; i <= total; i += 1) {
-    const ratioIdx = Math.min(arcs.length - 1, Math.floor(((i - 1) / total) * arcs.length));
-    const arc = arcs[ratioIdx];
-    const env = envs[(i - 1) % envs.length];
-    const hook = hooks[ratioIdx];
-    const goal = goals[Math.min(goals.length - 1, ratioIdx)];
-    const nextHint = i === total ? '主线阶段性收束，留下下一季入口。' : `抛出 EP${i + 1} 的核心问题。`;
-    const conflict = `围绕“${idea}”在${env}爆发新矛盾：${hook}。`;
-    const turn = i % 2 === 0
-      ? '看似占优的一方突然失手，局势逆转。'
-      : '弱势方拿到临时优势，但代价立即显现。';
-    const scriptText = [
-      `【第${i}集：${arc}】`,
-      `场景1：开场钩子（3-5秒）——${env}中出现异常信号，主角被迫行动。`,
-      `场景2：情节推进（20-30秒）——${conflict} 本集目标：${goal}。`,
-      `场景3：情绪爆点（10-15秒）——${turn}`,
-      `场景4：结尾悬念（5-8秒）——${nextHint}`,
-      '台词风格：短句、高信息密度、强节奏。'
-    ].join('\n');
-    episodes.push({
-      episode_no: i,
-      title: `第${i}集·${arc}`,
-      outline: `${conflict} ${nextHint}`,
-      script_text: scriptText,
-      status: 'scripted',
+  const GATEWAY = process.env.OPENCLAW_GATEWAY_URL || 'http://localhost:18789';
+  const PASS = process.env.OPENCLAW_GATEWAY_PASSWORD || '';
+
+  const prompt = `你是专业短剧编剧。根据以下创意，生成一部完整的${total}集短剧剧本。
+
+创意：${idea}
+
+要求：
+- 每集时长约90-120秒
+- 剧情连续，有完整的起承转合
+- 每集包含：集标题、场景描述、人物对白、结尾钩子
+- 输出严格的JSON格式，不要有任何额外文字
+
+输出格式：
+{"episodes":[{"episode_no":1,"title":"第1集·xxx","outline":"本集概要","script":"完整剧本内容，包含场景和对白"},...]}`;
+
+  try {
+    const resp = await fetch(`${GATEWAY}/v1/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${PASS}`,
+      },
+      body: JSON.stringify({
+        model: 'openclaw',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.8,
+      }),
     });
+    const json = await resp.json();
+    const text = json?.choices?.[0]?.message?.content || '';
+    // 提取 JSON
+    const match = text.match(/\{[\s\S]*\}/);
+    if (match) {
+      const parsed = JSON.parse(match[0]);
+      if (parsed.episodes && parsed.episodes.length > 0) {
+        return parsed.episodes.slice(0, total).map((ep, i) => ({
+          episode_no: ep.episode_no || i + 1,
+          title: ep.title || `第${i + 1}集`,
+          outline: ep.outline || '',
+          script_text: ep.script || ep.script_text || '',
+          status: 'scripted',
+        }));
+      }
+    }
+  } catch (e) {
+    console.warn('[AI Script] LLM call failed:', e.message);
   }
-  return episodes;
+
+  return buildLocalScriptFallback(idea, total);
+}
+
+function splitRawStory(raw, total) {
+  const parts = raw.split(/第[一二三四五六七八九十\d]+集/);
+  if (parts.length > 1) {
+    return parts.slice(1, total + 1).map((text, i) => ({
+      title: `第${i + 1}集`, outline: text.slice(0, 100), script_text: text.trim(),
+    }));
+  }
+  const lines = raw.split('\n').filter(Boolean);
+  const perEp = Math.ceil(lines.length / total);
+  return Array.from({ length: total }, (_, i) => {
+    const chunk = lines.slice(i * perEp, (i + 1) * perEp).join('\n');
+    return { title: `第${i + 1}集`, outline: chunk.slice(0, 100), script_text: chunk };
+  });
+}
+
+function buildLocalScriptFallback(idea, total) {
+  const arcs = [
+    { name: '相遇', hook: '命运安排两人意外相遇，产生强烈的第一印象。' },
+    { name: '误解', hook: '一场误会让关系急转直下，双方各执一词。' },
+    { name: '靠近', hook: '共同面对危机，两人不得不携手合作。' },
+    { name: '心动', hook: '细节中的温柔让对方心防松动，情愫暗生。' },
+    { name: '阻碍', hook: '外部势力介入，强行拆散两人。' },
+    { name: '表白', hook: '压抑已久的情感在关键时刻爆发。' },
+    { name: '危机', hook: '最大的考验来临，感情面临终极抉择。' },
+    { name: '和解', hook: '真相大白，误会消除，两人重归于好。' },
+    { name: '升华', hook: '经历磨难后感情更加坚定，共同面对未来。' },
+    { name: '圆满', hook: '所有伏笔收束，以温暖结局收尾。' },
+  ];
+  return Array.from({ length: total }, (_, i) => {
+    const arc = arcs[Math.min(i, arcs.length - 1)];
+    const epNo = i + 1;
+    const isLast = epNo === total;
+    const nextHook = isLast ? '全剧终，留下温暖余韵。' : `下集预告：${arcs[Math.min(i + 1, arcs.length - 1)].hook}`;
+    const script = [
+      `【第${epNo}集·${arc.name}】`,
+      ``,
+      `■ 主题：${arc.hook}`,
+      `■ 核心创意：${idea}`,
+      ``,
+      `【场景一：开场（0-15秒）】`,
+      `画面：特写镜头，环境音渐入。`,
+      `动作：主角出现，状态暗示本集情绪基调。`,
+      ``,
+      `【场景二：冲突（15-60秒）】`,
+      `对白：`,
+      `  主角A：（${arc.name}情绪）「……」`,
+      `  主角B：（反应）「……」`,
+      `动作：${arc.hook}`,
+      ``,
+      `【场景三：转折（60-90秒）】`,
+      `画面：情绪爆点，节奏加快。`,
+      `动作：局势发生意外变化，观众情绪被调动。`,
+      ``,
+      `【场景四：结尾钩子（90-120秒）】`,
+      `画面：定格或慢镜头。`,
+      `${nextHook}`,
+    ].join('\n');
+    return {
+      episode_no: epNo,
+      title: `第${epNo}集·${arc.name}`,
+      outline: arc.hook,
+      script_text: script,
+      status: 'scripted',
+    };
+  });
 }
 
 app.post('/api/agent/projects', async (req, res) => {
@@ -198,27 +270,28 @@ app.post('/api/agent/projects', async (req, res) => {
       rawJson: bible || {},
     });
 
-    const episodes = buildEpisodePlan({ idea: idea.trim(), episodeCount: Number(episodeCount || 1) });
-    await replaceProjectEpisodes(db, { projectUuid, episodes });
+    // 先返回项目创建成功，后台异步生成 AI 剧本
+    await setStoryProjectStatus(db, { projectUuid, status: 'generating' });
+    const project0 = await getStoryProject(db, projectUuid);
+    res.json({ ok: true, data: { project: project0, episodes: [], generating: true } });
 
-    for (const c of characters || []) {
-      const key = String(c.characterKey || c.name || '').trim();
-      if (!key) continue;
-      await upsertProjectCharacter(db, {
-        projectUuid,
-        characterKey: key,
-        name: c.name || key,
-        gender: c.gender || '',
-        persona: c.persona || '',
-        visualPrompt: c.visualPrompt || '',
-        voicePref: c.voicePref || '',
-      });
-    }
-
-    await setStoryProjectStatus(db, { projectUuid, status: 'planned' });
-    const project = await getStoryProject(db, projectUuid);
-    const epRows = await listProjectEpisodesByUuid(db, projectUuid);
-    res.json({ ok: true, data: { project, episodes: epRows } });
+    // 异步生成剧本
+    (async () => {
+      try {
+        const giggle = new GiggleClient({
+          baseUrl: process.env.GIGGLE_BASE_URL,
+          apiKey: process.env.GIGGLE_API_KEY,
+          authMode: process.env.GIGGLE_AUTH_MODE || 'x-auth',
+        });
+        const episodes = await buildEpisodePlanAI({ idea: idea.trim(), episodeCount: Number(episodeCount || 1), giggle });
+        await replaceProjectEpisodes(db, { projectUuid, episodes });
+        await setStoryProjectStatus(db, { projectUuid, status: 'planned' });
+      } catch (e) {
+        console.error('[AI Script] async generation failed:', e.message);
+        await setStoryProjectStatus(db, { projectUuid, status: 'failed' });
+      }
+    })();
+    return; // already responded
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
@@ -459,8 +532,10 @@ app.get('/api/agent/status/:runId', async (req, res) => {
   }
 });
 
+const DASHBOARD_HTML = path.resolve(__dirname, '..', 'assets', 'dashboard.html');
+
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'assets', 'dashboard.html'));
+  res.sendFile('dashboard.html', { root: path.resolve(__dirname, '..', 'assets') });
 });
 
 app.use((err, req, res, next) => {
@@ -473,3 +548,4 @@ const port = Number(process.env.PORT || 3000);
 app.listen(port, () => {
   console.log(`OpenClaw agent dashboard running at http://localhost:${port}`);
 });
+
