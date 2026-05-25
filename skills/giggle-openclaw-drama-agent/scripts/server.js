@@ -173,27 +173,33 @@ Shot 1（7s）
 - 画面Prompt用中文描述，简洁有画面感
 - 所有${total}集按顺序输出，集与集之间用空行分隔`;
 
-  try {
-    const resp = await fetch(`${GATEWAY}/v1/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${PASS}`,
-      },
-      body: JSON.stringify({
-        model: 'openclaw',
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.85,
-      }),
-    });
-    const json = await resp.json();
-    const text = json?.choices?.[0]?.message?.content || '';
-    if (text && text.includes('Shot')) {
-      const episodes = parseScriptText(text, total);
-      if (episodes.length > 0) return episodes;
+  // 最多重试 3 次，每次间隔 5 秒
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const resp = await fetch(`${GATEWAY}/v1/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${PASS}`,
+        },
+        body: JSON.stringify({
+          model: 'openclaw',
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.85,
+        }),
+        signal: AbortSignal.timeout(120000),
+      });
+      const json = await resp.json();
+      const text = json?.choices?.[0]?.message?.content || '';
+      if (text && text.includes('Shot')) {
+        const episodes = parseScriptText(text, total);
+        if (episodes.length > 0) return episodes;
+      }
+      break; // 请求成功但内容不符，不重试
+    } catch (e) {
+      console.warn(`[AI Script] LLM attempt ${attempt}/3 failed: ${e.message}`);
+      if (attempt < 3) await new Promise(r => setTimeout(r, 5000));
     }
-  } catch (e) {
-    console.warn('[AI Script] LLM call failed:', e.message);
   }
 
   return buildLocalScriptFallback(idea, total);
@@ -585,6 +591,71 @@ app.use((err, req, res, next) => {
   if (res.headersSent) return next(err);
   res.status(500).json({ ok: false, error: err.message || 'internal error' });
 });
+
+// ── 查询当前隧道地址 ──
+app.get('/api/tunnel-url', (req, res) => {
+  const { execSync } = require('child_process');
+  try {
+    const log = execSync("grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' /home/storyclaw/.claw/ai-drama-tunnel.log 2>/dev/null | tail -1", { encoding: 'utf8' }).trim();
+    res.json({ ok: true, url: log || null });
+  } catch {
+    res.json({ ok: true, url: null });
+  }
+});
+
+
+// ── 重新生成剧本接口 ──
+app.post('/api/agent/projects/:projectUuid/regenerate-script', async (req, res) => {
+  try {
+    const { projectUuid } = req.params;
+    const project = await getStoryProject(db, projectUuid);
+    if (!project) return res.status(404).json({ ok: false, error: 'project not found' });
+    await setStoryProjectStatus(db, { projectUuid, status: 'generating' });
+    res.json({ ok: true, message: 'regenerating' });
+    triggerScriptGeneration(projectUuid, project.idea, project.episodes || 1);
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+function triggerScriptGeneration(projectUuid, idea, episodeCount) {
+  (async () => {
+    try {
+      const giggle = new GiggleClient({
+        baseUrl: process.env.GIGGLE_BASE_URL,
+        apiKey: process.env.GIGGLE_API_KEY,
+        authMode: process.env.GIGGLE_AUTH_MODE || 'x-auth',
+      });
+      const episodes = await buildEpisodePlanAI({ idea, episodeCount: Number(episodeCount || 1), giggle });
+      await replaceProjectEpisodes(db, { projectUuid, episodes });
+      await setStoryProjectStatus(db, { projectUuid, status: 'planned' });
+    } catch (e) {
+      console.error('[AI Script] generation failed:', e.message);
+      await setStoryProjectStatus(db, { projectUuid, status: 'failed' });
+    }
+  })();
+}
+
+// ── 启动时恢复 generating 状态的项目 ──
+(async () => {
+  await new Promise(r => setTimeout(r, 15000));
+  try {
+    const stalled = await listStoryProjects(db, 50);
+    for (const p of stalled) {
+      if (p.status !== 'generating') continue;
+      const eps = await listProjectEpisodesByUuid(db, p.project_uuid);
+      if (eps.length > 0) {
+        await setStoryProjectStatus(db, { projectUuid: p.project_uuid, status: 'planned' });
+        continue;
+      }
+      console.log(`[startup] resuming script generation for ${p.project_uuid}`);
+      triggerScriptGeneration(p.project_uuid, p.idea, p.episodes || 1);
+    }
+  } catch (e) {
+    console.warn('[startup] resume check failed:', e.message);
+  }
+})();
+
 
 const port = Number(process.env.PORT || 3000);
 app.listen(port, () => {
