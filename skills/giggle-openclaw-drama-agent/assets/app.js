@@ -281,8 +281,8 @@
   const _pollLines = new Map(); // key -> {el, base}
   setInterval(() => {
     _spinIdx = (_spinIdx + 1) % _spinFrames.length;
-    _pollLines.forEach(({el, base}) => {
-      el.textContent = _spinFrames[_spinIdx] + ' ' + base;
+    _pollLines.forEach(({el, baseEl}) => {
+      el.textContent = _spinFrames[_spinIdx];
     });
   }, 100);
 
@@ -369,6 +369,7 @@
           pollTimer = null;
           activeRunId = null;
           if (runBtn) runBtn.disabled = false;
+          _pollLines.clear();
           await refreshStoryWorkspace();
         }
       } catch (e) {
