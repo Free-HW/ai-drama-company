@@ -678,6 +678,23 @@ function triggerScriptGeneration(projectUuid, idea, episodeCount) {
 })();
 
 
+// 从 Giggle 实时拉取分镜列表
+app.get('/api/agent/projects/:projectUuid/shots', async (req, res) => {
+  try {
+    const ep = await getProjectEpisodeByNo(db, { projectUuid: req.params.projectUuid, episodeNo: Number(req.query.episode_no || 1) });
+    if (!ep?.giggle_project_id) return res.json({ ok: true, data: [] });
+    const giggle = new GiggleClient({
+      baseUrl: process.env.GIGGLE_BASE_URL,
+      apiKey: process.env.GIGGLE_API_KEY,
+      authMode: process.env.GIGGLE_AUTH_MODE || 'x-auth',
+    });
+    const r = await giggle.listShots(ep.giggle_project_id);
+    res.json({ ok: true, data: r.data?.shot_list || [] });
+  } catch (e) {
+    res.json({ ok: false, error: e.message, data: [] });
+  }
+});
+
 const port = Number(process.env.PORT || 3000);
 app.listen(port, () => {
   console.log(`OpenClaw agent dashboard running at http://localhost:${port}`);

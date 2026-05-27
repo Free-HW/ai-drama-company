@@ -512,6 +512,7 @@
     window._currentProjectName = data.project?.name || '';
     window._currentChars = data.characters || [];
     window._currentShots = data.shots || [];
+    window._currentProjectUuid = projectUuid;
 
     eps.forEach((ep) => {
       const btn = document.getElementById(`run-ep-${ep.episode_no}`);
@@ -881,10 +882,10 @@ function showEpModal(e, epNo) {
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;">${charsHtml}</div>
       </div>
 
-      <!-- 分镜面板 -->
+      <!-- 分镜面板（懒加载） -->
       <div class="ep-modal-panel" data-panel="shots" style="padding:24px;display:none;">
-        <div style="font-family:monospace;font-size:12px;color:#5e5e66;margin-bottom:12px;letter-spacing:1px;">STORYBOARD · ${shots.length} 个分镜</div>
-        ${shotsHtml}
+        <div style="font-family:monospace;font-size:12px;color:#5e5e66;margin-bottom:12px;letter-spacing:1px;">STORYBOARD</div>
+        <div class="shots-body"><div style="color:#5e5e66;font-size:12px;">点击此 Tab 加载分镜</div></div>
       </div>
 
       <!-- 信息面板 -->
@@ -911,9 +912,10 @@ function showEpModal(e, epNo) {
 
     </div>`;
 
-  // Tab 切换
+  // Tab 切换（分镜 Tab 懒加载）
+  const projectUuidForShots = window._currentProjectUuid || '';
   modal.querySelectorAll('.ep-modal-tab').forEach(tab => {
-    tab.addEventListener('click', () => {
+    tab.addEventListener('click', async () => {
       modal.querySelectorAll('.ep-modal-tab').forEach(t => {
         t.style.background = 'none';
         t.style.borderBottom = '2px solid transparent';
@@ -923,7 +925,35 @@ function showEpModal(e, epNo) {
       tab.style.background = 'rgba(232,179,57,.06)';
       tab.style.borderBottom = '2px solid #e8b339';
       tab.style.color = '#e8b339';
-      modal.querySelector(`.ep-modal-panel[data-panel="${tab.dataset.panel}"]`).style.display = 'block';
+      const panel = modal.querySelector(`.ep-modal-panel[data-panel="${tab.dataset.panel}"]`);
+      panel.style.display = 'block';
+
+      // 分镜 Tab：实时从 Giggle 拉取
+      if (tab.dataset.panel === 'shots' && !panel.dataset.loaded) {
+        panel.dataset.loaded = '1';
+        const shotsBody = panel.querySelector('.shots-body');
+        if (shotsBody) shotsBody.innerHTML = '<div style="color:#5e5e66;font-size:12px;">⠋ 加载分镜中...</div>';
+        try {
+          const r = await fetch(`/api/agent/projects/${projectUuidForShots}/shots?episode_no=${epNo}`);
+          const j = await r.json();
+          const list = j.data || [];
+          if (!shotsBody) return;
+          if (!list.length) { shotsBody.innerHTML = '<div style="color:#5e5e66;font-size:12px;">暂无分镜数据（生产后可见）</div>'; return; }
+          shotsBody.innerHTML = `
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:8px;">
+              ${list.map(s => `
+                <div style="border:1px solid #2a2a30;border-radius:4px;overflow:hidden;background:#111;">
+                  ${s.signed_url || s.thumbnail_url ? `<img src="${s.signed_url || s.thumbnail_url}" style="width:100%;aspect-ratio:9/16;object-fit:cover;display:block;" loading="lazy" />` : `<div style="aspect-ratio:9/16;background:#1a1a1f;display:flex;align-items:center;justify-content:center;font-size:18px;">🎬</div>`}
+                  <div style="padding:4px 6px;">
+                    <div style="font-size:9px;color:#5e5e66;">SHOT ${s.shot_id || '-'}</div>
+                    <div style="font-size:9px;color:${s.video_generating_status==='completed'?'#4ade80':s.video_generating_status==='failed'?'#f87171':'#e8b339'};">${s.video_generating_status || s.generating_status || 'pending'}</div>
+                  </div>
+                </div>`).join('')}
+            </div>`;
+        } catch(e) {
+          if (shotsBody) shotsBody.innerHTML = `<div style="color:#f87171;font-size:12px;">加载失败: ${e.message}</div>`;
+        }
+      }
     });
   });
 
