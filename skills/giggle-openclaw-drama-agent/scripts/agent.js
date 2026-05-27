@@ -193,7 +193,7 @@ class DramaAgent {
     await this.giggle.generateVideosForShots({
       project_id: projectId,
       model: 'seedance-2.0-pro',
-      second_model: 'seedance15-pro',
+      second_model: 'seedance-2.0-pro',
       shot_id: shotIds,
     });
 
@@ -222,7 +222,7 @@ class DramaAgent {
           await this.giggle.generateVideosForShots({
             project_id: projectId,
             model: 'seedance-2.0-pro',
-            second_model: 'seedance15-pro',
+            second_model: 'seedance-2.0-pro',
             shot_id: failed.map((s) => Number(s.id)),
           });
         }
