@@ -525,6 +525,27 @@
     });
   }
 
+  // 页面加载时自动恢复轮询（检测 running 状态的集数）
+  async function autoResumePolling() {
+    if (activeRunId || pollTimer) return; // 已在轮询中
+    for (const p of storyProjects) {
+      const resp = await fetch(`/api/agent/projects/${p.project_uuid}`);
+      const json = await resp.json();
+      const running = (json.data?.episodes || []).find(e => e.status === 'running' && e.run_id);
+      if (running) {
+        selectedStoryProjectUuid = p.project_uuid;
+        renderStoryProjects();
+        await renderStoryEpisodes(p.project_uuid);
+        const tip = document.getElementById('oclawTip');
+        if (tip) tip.textContent = `检测到 EP${running.episode_no} 正在执行，已自动恢复轮询...`;
+        appendLine('system', 'SYSTEM', `[恢复] EP${running.episode_no} 任务进行中，run_id: ${running.run_id}`, 'script');
+        const runBtn = document.getElementById(`run-ep-${running.episode_no}`);
+        await pollRunStatus(running.run_id, tip, runBtn);
+        return;
+      }
+    }
+  }
+
   async function refreshStoryWorkspace() {
     const resp = await fetch('/api/agent/projects?limit=50');
     const json = await resp.json();
@@ -790,8 +811,7 @@
     const refreshBtn = document.getElementById('oclawRefresh');
     if (runBtn) runBtn.addEventListener('click', createStoryProjectFromInput);
     if (refreshBtn) refreshBtn.addEventListener('click', refreshStoryWorkspace);
-    refreshStoryWorkspace();
-  }
+    refreshStoryWorkspace().then(autoResumePolling);
 
   loadX2CShowcase();
 })();
