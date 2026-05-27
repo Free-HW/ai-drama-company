@@ -1,4 +1,5 @@
 const { poll } = require('./giggleClient');
+const { getGlobalCharacterByName, saveGlobalCharacter } = require('./db');
 
 function normStatus(v) {
   return String(v || '').trim().toLowerCase();
@@ -58,7 +59,7 @@ class DramaAgent {
     out.steps.push({ step: 'script.expand', taskId: storyTaskId, storyData: storyDone.data || {} });
     emit('agent-a', 'AGENT-A', '[ScriptAgent] 剧本扩写完成', 'script');
 
-    // ── Step 3: 生成角色 ──
+    // ── Step 3: 生成角色（含跨剧集一致性） ──
     emit('agent-b', 'AGENT-B', '[CastingAgent] 生成角色...', 'casting');
     await this.giggle.generateCharacters(projectId);
 
@@ -81,8 +82,51 @@ class DramaAgent {
       },
     });
     const characterList = characterDone.data?.character_list || [];
+
+    // 角色一致性：与全局角色库对比，同名则替换，新角色则入库
+    const db = input.db; // server.js 调用时传入
+    if (db) {
+      for (const c of characterList) {
+        const existing = await getGlobalCharacterByName(db, c.name);
+        if (existing && existing.giggle_asset_id) {
+          // 同名角色：用已有 asset_id 替换本集角色
+          emit('agent-b', 'AGENT-B', `[CastingAgent] 复用已有角色: ${c.name}`, 'casting');
+          try {
+            await this.giggle.applyCharacterLibrary({
+              child_id: String(c.id),
+              asset_id: existing.giggle_asset_id,
+            });
+          } catch (e) {
+            emit('agent-b', 'AGENT-B', `[CastingAgent] 角色替换失败 ${c.name}: ${e.message}`, 'casting');
+          }
+        } else {
+          // 新角色：存入角色库和全局 DB
+          emit('agent-b', 'AGENT-B', `[CastingAgent] 新角色入库: ${c.name}`, 'casting');
+          try {
+            await this.giggle.uploadCharacterToLibrary({
+              name: c.name,
+              gender: c.gender || '',
+              category: '',
+              age: '',
+              asset_id: c.asset_id,
+            });
+            await saveGlobalCharacter(db, {
+              projectUuid: input.storyProjectUuid,
+              name: c.name,
+              gender: c.gender || '',
+              giggleCharacterId: c.id,
+              giggleAssetId: c.asset_id,
+              rawJson: c,
+            });
+          } catch (e) {
+            emit('agent-b', 'AGENT-B', `[CastingAgent] 角色入库失败 ${c.name}: ${e.message}`, 'casting');
+          }
+        }
+      }
+    }
+
     out.steps.push({ step: 'character.generate', count: characterList.length, characterList });
-    emit('agent-b', 'AGENT-B', `[CastingAgent] 角色生成完成: ${characterList.length} 个`, 'casting');
+    emit('agent-b', 'AGENT-B', `[CastingAgent] 角色处理完成: ${characterList.length} 个`, 'casting');
 
     // ── Step 4: 生成全部分镜图 ──
     emit('agent-c', 'AGENT-C', '[StoryboardAgent] 生成分镜图...', 'storyboard');

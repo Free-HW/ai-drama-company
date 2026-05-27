@@ -233,6 +233,48 @@ async function listCharacterMappings(db, projectUuid) {
   return all(db, `SELECT * FROM character_mappings WHERE project_uuid=? AND is_active=1 ORDER BY id ASC`, [projectUuid]);
 }
 
+// ── 全局角色库（跨剧集角色一致性） ──
+
+/**
+ * 按名字查全局角色库（不限 project_uuid）
+ * 返回最新的同名角色记录（含 giggle_asset_id）
+ */
+async function getGlobalCharacterByName(db, name) {
+  return get(db,
+    `SELECT pc.name, pc.gender, cm.giggle_character_id, cm.giggle_asset_id, cm.raw_json
+     FROM project_characters pc
+     JOIN character_mappings cm ON cm.project_uuid = pc.project_uuid
+       AND cm.project_character_key = pc.character_key
+       AND cm.is_active = 1
+     WHERE pc.name = ?
+     ORDER BY cm.id DESC LIMIT 1`,
+    [name]
+  );
+}
+
+/**
+ * 保存角色到全局库（project_characters + character_mappings）
+ */
+async function saveGlobalCharacter(db, { projectUuid, name, gender, giggleCharacterId, giggleAssetId, rawJson }) {
+  const now = new Date().toISOString();
+  const key = name.replace(/\s+/g, '_').toLowerCase();
+  await run(db,
+    `INSERT INTO project_characters (project_uuid,character_key,name,gender,persona,visual_prompt,voice_pref,created_at,updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(project_uuid,character_key) DO UPDATE SET name=excluded.name,gender=excluded.gender,updated_at=excluded.updated_at`,
+    [projectUuid, key, name, gender||'', '', '', '', now, now]
+  );
+  // 停用旧映射
+  await run(db, `UPDATE character_mappings SET is_active=0,updated_at=? WHERE project_uuid=? AND project_character_key=?`,
+    [now, projectUuid, key]);
+  await run(db,
+    `INSERT INTO character_mappings (project_uuid,project_character_key,giggle_character_id,giggle_asset_id,version,is_active,raw_json,created_at,updated_at)
+     VALUES (?,?,?,?,1,1,?,?,?)`,
+    [projectUuid, key, String(giggleCharacterId||''), String(giggleAssetId||''), JSON.stringify(rawJson||{}), now, now]
+  );
+}
+
+
 module.exports = {
   DB_PATH, openDb, initSchema, createRun, setProjectId, saveScript,
   replaceCharacters, replaceStoryboards, addLog, finishRun, getLatestSnapshot,

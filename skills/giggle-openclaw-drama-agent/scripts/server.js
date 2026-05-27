@@ -408,15 +408,17 @@ app.post('/api/agent/projects/:projectUuid/episodes/:episodeNo/run', async (req,
           pollTimeoutMs: Number(process.env.POLL_TIMEOUT_MS || 1800000),
         });
         const result = await agent.run({
-          idea: episode.outline || project.idea,
+          idea: episode.script_text || episode.outline || project.idea,
           projectName: `${project.name}-EP${String(episodeNo).padStart(2, '0')}`,
           aspect: project.aspect || '16:9',
           language: project.language || 'zh-CN',
           videoDuration: req.body?.videoDuration || 60,
-          styleId: req.body?.styleId || 1,
-          videoModel: req.body?.videoModel || 'kling',
-          secondModel: req.body?.secondModel || 'minimax',
+          styleId: req.body?.styleId || 145,
+          videoModel: req.body?.videoModel || 'seedance-2.0-pro',
+          secondModel: req.body?.secondModel || 'seedance15-pro',
           shotDuration: req.body?.shotDuration || 5,
+          db,
+          storyProjectUuid: projectUuid,
         }, emit);
 
         const giggleProjectId = result.projectId || '';
