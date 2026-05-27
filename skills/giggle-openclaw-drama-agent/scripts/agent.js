@@ -128,8 +128,20 @@ class DramaAgent {
     out.steps.push({ step: 'character.generate', count: characterList.length, characterList });
     emit('agent-b', 'AGENT-B', `[CastingAgent] 角色处理完成: ${characterList.length} 个`, 'casting');
 
-    // ── Step 4: 生成全部分镜图 ──
-    emit('agent-c', 'AGENT-C', '[StoryboardAgent] 生成分镜图...', 'storyboard');
+    // ── Step 4: 等待分镜列表就绪（storyExpansion 完成后 Giggle 自动生成 shot list） ──
+    emit('agent-c', 'AGENT-C', '[StoryboardAgent] 等待分镜列表就绪...', 'storyboard');
+    await poll({
+      fn: () => this.giggle.listShots(projectId),
+      isDone: (r) => (r.data?.shot_list || []).length > 0,
+      isFailed: () => false,
+      intervalMs: interval,
+      timeoutMs: 5 * 60 * 1000,
+      onTick: (r) => {
+        const n = (r.data?.shot_list || []).length;
+        emit('agent-c', 'AGENT-C', `[StoryboardAgent] 等待分镜列表... 当前 ${n} 条`, 'storyboard');
+      },
+    });
+    emit('agent-c', 'AGENT-C', '[StoryboardAgent] 分镜列表就绪，开始生成分镜图...', 'storyboard');
     await this.giggle.autoGenerateImages(projectId, 'seedream45');
 
     const shotsDone = await poll({
