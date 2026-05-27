@@ -462,7 +462,7 @@ app.post('/api/agent/projects/:projectUuid/episodes/:episodeNo/run', async (req,
           runId,
           giggleProjectId,
           exportUrl,
-          coverUrl: result.export?.videoThumbnailUrl || '',
+          coverUrl: result.export?.videoThumbnailUrl || (() => { const m = (result.export?.videoDownloadUrl||'').match(/(https:\/\/assets\.giggle\.pro\/public\/ai_director\/[^\/]+\/[^.?]+)\.mp4/); return m ? m[1]+'.thumb.jpg' : ''; })(),
         });
         await addLog(db, { runId, stage: 'distribute', tagClass: 'system', tagText: 'SYSTEM', payload: exportUrl ? `Final video: ${exportUrl}` : 'Final video exported.' });
 

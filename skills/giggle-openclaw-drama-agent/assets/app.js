@@ -482,8 +482,10 @@
           : ep.status === 'failed' || ep.status === 'partial_failed'
             ? { cls: 'queued', label: 'FAILED', pct: 10 }
             : { cls: 'queued', label: 'PLANNED', pct: 8 };
-      // 封面图：优先用 giggle 导出的缩略图，否则用渐变占位
-      const thumbUrl = ep.cover_url || ep.thumbnail_url || '';
+      // 封面图：优先 cover_url，否则从 export_url 推导 .thumb.jpg
+      const _eu = ep.export_url || '';
+      const _thumbMatch = _eu.match(/(https:\/\/assets\.giggle\.pro\/public\/ai_director\/[^\/]+\/[^.?]+)\.mp4/);
+      const thumbUrl = ep.cover_url || ep.thumbnail_url || (_thumbMatch ? _thumbMatch[1] + '.thumb.jpg' : '');
       const thumbStyle = thumbUrl
         ? `background-image:url('${thumbUrl}');background-size:cover;background-position:center;`
         : '';
