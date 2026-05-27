@@ -1,4 +1,4 @@
-﻿const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 class GiggleClient {
   constructor({ baseUrl, apiKey, authMode = 'x-auth' }) {
@@ -25,13 +25,11 @@ class GiggleClient {
         if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
       });
     }
-
     const res = await fetch(url, {
       method,
       headers: this.headers(),
       body: body ? JSON.stringify(body) : undefined,
     });
-
     const json = await res.json().catch(() => ({}));
     const code = json && Object.prototype.hasOwnProperty.call(json, 'code') ? String(json.code) : null;
     const codeOk = code === null || code === '0' || code === '200';
@@ -41,56 +39,82 @@ class GiggleClient {
     return json;
   }
 
+  // 1. 创建项目
   createProject(input) {
-    return this.request('POST', '/api/v1/project/create', { body: input });
+    return this.request('POST', '/api/v1/project/create', {
+      body: {
+        name: input.name,
+        type: 'short-film',
+        aspect: input.aspect || '9:16',
+        mode: 'professional',
+      },
+    });
   }
 
+  // 2. 扩写剧本（异步）
   storyExpansion(input) {
     return this.request('POST', '/api/v1/script/storyExpansion', { body: input });
   }
 
+  // 3. 查询剧本扩写结果
   getExpandedStory(taskId) {
     return this.request('GET', '/api/v1/script/getExpandedStory', { query: { task_id: taskId } });
   }
 
+  // 4. 生成角色
   generateCharacters(projectId) {
     return this.request('POST', '/api/v1/character/generate', { body: { project_id: projectId } });
   }
 
+  // 5. 获取角色列表
   listCharacters(projectId) {
     return this.request('GET', '/api/v1/character/list', { query: { project_id: projectId } });
   }
 
-  autoGenerateStoryboard(projectId) {
-    return this.request('POST', '/api/v1/storyboard/auto-generate', { body: { project_id: projectId } });
+  // 6. 存储角色到角色库
+  uploadCharacterToLibrary(input) {
+    return this.request('POST', '/api/v1/character-library/upload-local-image', { body: input });
   }
 
-  listStoryboard(projectId) {
-    return this.request('GET', '/api/v1/storyboard/list', { query: { project_id: projectId } });
+  // 7. 生成全部分镜图
+  autoGenerateImages(projectId, model = 'seedream45') {
+    return this.request('POST', '/api/v1/storyboard-shots/auto-generate-image', {
+      body: { project_id: projectId, model },
+    });
   }
 
-  autoGenerateImages(projectId) {
-    return this.request('POST', '/api/v1/storyboard/auto-generate-image', { body: { project_id: projectId } });
+  // 8. 获取分镜列表（图/视频统一）
+  listShots(projectId, shotId) {
+    const query = { project_id: projectId };
+    if (shotId) query.shot = shotId;
+    return this.request('GET', '/api/v1/storyboard-shots/list', { query });
   }
 
-  storyboardDetail(projectId, parentId) {
-    return this.request('GET', '/api/v1/storyboard/detail', { query: { project_id: projectId, parent_id: parentId } });
+  // 9. 一键优化视频提示词
+  optimizeVideoPrompts(projectId, model = 'seedance-2.0-pro') {
+    return this.request('POST', '/api/v1/storyboard-shots/optimize-prompt', {
+      body: { project_id: projectId, model },
+    });
   }
 
-  autoGenerateVideos(input) {
-    return this.request('POST', '/api/v1/storyboard/auto-generate-video', { body: input });
+  // 10. 批量生成分镜视频
+  generateVideosForShots(input) {
+    return this.request('POST', '/api/v1/storyboard-shots/generate-video-for-shot', { body: input });
   }
 
-  storyboardVideoDetail(projectId, parentId) {
-    return this.request('GET', '/api/v1/storyboard/video-detail', { query: { project_id: projectId, parent_id: parentId } });
-  }
-
+  // 12. 导出完整视频（异步）
   exportEntireFilm(input) {
     return this.request('POST', '/api/v1/video-edit/export-entire-film', { body: input });
   }
 
-  myAssets() {
-    return this.request('GET', '/api/v1/project/my_assets');
+  // 13. 获取导出视频结果
+  getExportedAssets(projectId) {
+    return this.request('GET', '/api/v1/project/my_assets', { query: { project_id: projectId } });
+  }
+
+  // 14. 应用角色库角色
+  applyCharacterLibrary(input) {
+    return this.request('POST', '/api/v1/character-library/apply', { body: input });
   }
 }
 

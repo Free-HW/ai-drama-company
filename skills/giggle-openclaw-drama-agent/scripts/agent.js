@@ -1,17 +1,15 @@
-﻿const { poll } = require('./giggleClient');
+const { poll } = require('./giggleClient');
 
 function normStatus(v) {
   return String(v || '').trim().toLowerCase();
 }
 
-function isSuccessStatus(v) {
-  const st = normStatus(v);
-  return st === 'completed' || st === 'success' || st === 'done' || st === 'finished';
+function isDone(v) {
+  return ['completed', 'success', 'done', 'finished'].includes(normStatus(v));
 }
 
-function isFailedStatus(v) {
-  const st = normStatus(v);
-  return st === 'failed' || st === 'error' || st === 'timeout' || st === 'cancelled';
+function isFailed(v) {
+  return ['failed', 'error', 'timeout', 'cancelled'].includes(normStatus(v));
 }
 
 class DramaAgent {
@@ -23,164 +21,180 @@ class DramaAgent {
 
   async run(input, emit) {
     const out = { status: 'running', projectId: null, export: null, steps: [] };
+    const { pollIntervalMs: interval, pollTimeoutMs: timeout } = this;
 
-    emit('system', 'SYSTEM', 'Pipeline started', 'script');
-
-    emit('agent-a', 'AGENT-A', '[ScriptAgent] Creating project...', 'script');
+    // ── Step 1: 创建项目 ──
+    emit('agent-a', 'AGENT-A', '[ScriptAgent] 创建项目...', 'script');
     const projectResp = await this.giggle.createProject({
       name: input.projectName || `AI短剧-${Date.now()}`,
-      type: 'director',
       aspect: input.aspect || '9:16',
     });
     const projectId = projectResp.data?.project_id;
+    if (!projectId) throw new Error('创建项目失败：未返回 project_id');
     out.projectId = projectId;
-    out.steps.push({ step: 'project.create', projectId });
-    emit('agent-a', 'AGENT-A', `[ScriptAgent] Project created: ${projectId}`, 'script');
+    emit('agent-a', 'AGENT-A', `[ScriptAgent] 项目已创建: ${projectId}`, 'script');
 
-    emit('agent-a', 'AGENT-A', '[ScriptAgent] Expanding user story...', 'script');
+    // ── Step 2: 扩写剧本（传入 AI 生成的完整剧本） ──
+    emit('agent-a', 'AGENT-A', '[ScriptAgent] 提交剧本扩写...', 'script');
     const storyTask = await this.giggle.storyExpansion({
       project_id: projectId,
       diy_story: input.idea,
       video_duration: String(input.videoDuration || 60),
-      style_id: input.styleId || 1,
+      style_id: input.styleId || 145,
       aspect: input.aspect || '9:16',
       language: input.language || 'zh-CN',
     });
     const storyTaskId = storyTask.data?.task_id;
+    if (!storyTaskId) throw new Error('扩写剧本失败：未返回 task_id');
 
     const storyDone = await poll({
       fn: () => this.giggle.getExpandedStory(storyTaskId),
-      isDone: (r) => isSuccessStatus(r.data?.status),
-      isFailed: (r) => isFailedStatus(r.data?.status),
-      intervalMs: this.pollIntervalMs,
-      timeoutMs: this.pollTimeoutMs,
-      onTick: (r) => emit('agent-a', 'AGENT-A', `[ScriptAgent] story status: ${r.data?.status || 'unknown'}`, 'script'),
+      isDone: (r) => isDone(r.data?.status),
+      isFailed: (r) => isFailed(r.data?.status),
+      intervalMs: interval,
+      timeoutMs: timeout,
+      onTick: (r) => emit('agent-a', 'AGENT-A', `[ScriptAgent] 剧本扩写状态: ${r.data?.status || 'pending'}`, 'script'),
     });
-    out.steps.push({ step: 'script.expand', taskId: storyTaskId, status: storyDone.data?.status, storyData: storyDone.data || {} });
-    emit('agent-a', 'AGENT-A', '[ScriptAgent] Script ready', 'script');
+    out.steps.push({ step: 'script.expand', taskId: storyTaskId, storyData: storyDone.data || {} });
+    emit('agent-a', 'AGENT-A', '[ScriptAgent] 剧本扩写完成', 'script');
 
-    emit('agent-b', 'AGENT-B', '[CastingAgent] Generating characters...', 'casting');
+    // ── Step 3: 生成角色 ──
+    emit('agent-b', 'AGENT-B', '[CastingAgent] 生成角色...', 'casting');
     await this.giggle.generateCharacters(projectId);
+
     const characterDone = await poll({
       fn: () => this.giggle.listCharacters(projectId),
       isDone: (r) => {
-        const statusOk = isSuccessStatus(r.data?.status);
         const list = r.data?.character_list || [];
-        const listOk = list.length > 0 && list.every((x) => isSuccessStatus(x.generating_status));
-        return statusOk || listOk;
+        return list.length > 0 && list.every((x) => isDone(x.generating_status));
       },
       isFailed: (r) => {
-        if (isFailedStatus(r.data?.status)) return true;
         const list = r.data?.character_list || [];
-        return list.some((x) => isFailedStatus(x.generating_status));
+        return list.some((x) => isFailed(x.generating_status));
       },
-      intervalMs: this.pollIntervalMs,
-      timeoutMs: this.pollTimeoutMs,
-      onTick: (r) => emit('agent-b', 'AGENT-B', `[CastingAgent] status: ${r.data?.status || 'unknown'}`, 'casting'),
+      intervalMs: interval,
+      timeoutMs: timeout,
+      onTick: (r) => {
+        const list = r.data?.character_list || [];
+        const done = list.filter((x) => isDone(x.generating_status)).length;
+        emit('agent-b', 'AGENT-B', `[CastingAgent] 角色生成中 ${done}/${list.length}`, 'casting');
+      },
     });
     const characterList = characterDone.data?.character_list || [];
     out.steps.push({ step: 'character.generate', count: characterList.length, characterList });
-    emit('agent-b', 'AGENT-B', `[CastingAgent] Completed: ${characterList.length} characters`, 'casting');
+    emit('agent-b', 'AGENT-B', `[CastingAgent] 角色生成完成: ${characterList.length} 个`, 'casting');
 
-    emit('agent-c', 'AGENT-C', '[StoryboardAgent] Auto-generating shots...', 'storyboard');
-    await this.giggle.autoGenerateStoryboard(projectId);
-    const storyboardDone = await poll({
-      fn: () => this.giggle.listStoryboard(projectId),
+    // ── Step 4: 生成全部分镜图 ──
+    emit('agent-c', 'AGENT-C', '[StoryboardAgent] 生成分镜图...', 'storyboard');
+    await this.giggle.autoGenerateImages(projectId, 'seedream45');
+
+    const shotsDone = await poll({
+      fn: () => this.giggle.listShots(projectId),
       isDone: (r) => {
-        const statusOk = isSuccessStatus(r.data?.status);
-        const shotsList = r.data?.shot_list || [];
-        const shotsOk = shotsList.length > 0;
-        return statusOk || shotsOk;
+        const list = r.data?.shot_list || [];
+        return list.length > 0 && list.every((x) => isDone(x.generating_status));
       },
       isFailed: (r) => {
-        if (isFailedStatus(r.data?.status)) return true;
-        const shotsList = r.data?.shot_list || [];
-        return shotsList.some((x) => isFailedStatus(x.generating_status) || isFailedStatus(x.video_generating_status));
+        const list = r.data?.shot_list || [];
+        return list.some((x) => isFailed(x.generating_status));
       },
-      intervalMs: this.pollIntervalMs,
-      timeoutMs: this.pollTimeoutMs,
-      onTick: (r) => emit('agent-c', 'AGENT-C', `[StoryboardAgent] status: ${r.data?.status || 'unknown'}`, 'storyboard'),
+      intervalMs: interval,
+      timeoutMs: timeout,
+      onTick: (r) => {
+        const list = r.data?.shot_list || [];
+        const done = list.filter((x) => isDone(x.generating_status)).length;
+        emit('agent-c', 'AGENT-C', `[StoryboardAgent] 分镜图生成中 ${done}/${list.length}`, 'storyboard');
+      },
     });
-    const shots = storyboardDone.data?.shot_list || [];
-    out.steps.push({ step: 'storyboard.generate', shotCount: shots.length, shots });
-    emit('agent-c', 'AGENT-C', `[StoryboardAgent] Completed: ${shots.length} shots`, 'storyboard');
+    const shots = shotsDone.data?.shot_list || [];
+    out.steps.push({ step: 'storyboard.image', shotCount: shots.length, shots });
+    emit('agent-c', 'AGENT-C', `[StoryboardAgent] 分镜图完成: ${shots.length} 张`, 'storyboard');
 
-    emit('agent-c', 'AGENT-C', '[StoryboardAgent] Auto-generating shot images...', 'storyboard');
-    await this.giggle.autoGenerateImages(projectId);
-    const firstShotId = shots[0]?.id || shots[0]?.parent_id;
-    if (firstShotId) {
-      await poll({
-        fn: () => this.giggle.storyboardDetail(projectId, firstShotId),
-        isDone: (r) => {
-          const list = r.data?.[0]?.img_list || [];
-          return list.length > 0 && list.every((x) => isSuccessStatus(x.generating_status));
-        },
-        isFailed: (r) => (r.data?.[0]?.img_list || []).some((x) => isFailedStatus(x.generating_status)),
-        intervalMs: this.pollIntervalMs,
-        timeoutMs: this.pollTimeoutMs,
-        onTick: () => emit('agent-c', 'AGENT-C', '[StoryboardAgent] image generation in progress...', 'storyboard'),
-      });
-    }
-    out.steps.push({ step: 'storyboard.image.generate' });
-    emit('agent-c', 'AGENT-C', '[StoryboardAgent] Images ready', 'storyboard');
+    // ── Step 5: 优化视频提示词 ──
+    emit('agent-c', 'AGENT-C', '[StoryboardAgent] 优化视频提示词...', 'storyboard');
+    await this.giggle.optimizeVideoPrompts(projectId, 'seedance-2.0-pro');
+    // 等待 5 秒让优化完成（接口同步返回 null，无需轮询）
+    await new Promise(r => setTimeout(r, 5000));
+    emit('agent-c', 'AGENT-C', '[StoryboardAgent] 提示词优化完成', 'storyboard');
 
-    emit('agent-d', 'AGENT-D', '[VideoAgent] Auto-generating videos...', 'render');
-    await this.giggle.autoGenerateVideos({
+    // ── Step 6: 批量生成分镜视频 ──
+    emit('agent-d', 'AGENT-D', '[VideoAgent] 生成分镜视频...', 'render');
+    const shotIds = shots.map((s) => Number(s.id));
+    await this.giggle.generateVideosForShots({
       project_id: projectId,
-      model: input.videoModel || 'kling',
-      duration: input.shotDuration || 5,
-      generate_audio: true,
-      second_model: input.secondModel || 'minimax',
+      model: 'seedance-2.0-pro',
+      second_model: 'seedance15-pro',
+      shot_id: shotIds,
     });
 
-    if (firstShotId) {
-      await poll({
-        fn: () => this.giggle.storyboardVideoDetail(projectId, firstShotId),
-        isDone: (r) => {
-          const list = r.data?.[0]?.video_list || [];
-          return list.length > 0 && list.every((x) => isSuccessStatus(x.generating_status));
-        },
-        isFailed: (r) => (r.data?.[0]?.video_list || []).some((x) => isFailedStatus(x.generating_status)),
-        intervalMs: this.pollIntervalMs,
-        timeoutMs: this.pollTimeoutMs,
-        onTick: () => emit('agent-d', 'AGENT-D', '[VideoAgent] video generation in progress...', 'render'),
-      });
-    }
-    out.steps.push({ step: 'video.generate' });
-    emit('agent-d', 'AGENT-D', '[VideoAgent] Video clips ready', 'render');
-
-    emit('agent-e', 'AGENT-E', '[DistributionAgent] Exporting final film...', 'distribute');
-    const exportResp = await this.giggle.exportEntireFilm({
-      project_id: projectId,
-      subtitle_enabled: input.subtitleEnabled ?? true,
-      bgm_volume: input.bgmVolume ?? 0.3,
+    // 轮询视频生成状态，对 failed 的分镜自动重试一次
+    let retried = false;
+    await poll({
+      fn: () => this.giggle.listShots(projectId),
+      isDone: (r) => {
+        const list = r.data?.shot_list || [];
+        return list.length > 0 && list.every(
+          (x) => isDone(x.video_generating_status) || x.video_generating_status === 'waiting'
+        );
+      },
+      isFailed: () => false, // 不整体失败，单独重试
+      intervalMs: interval,
+      timeoutMs: timeout,
+      onTick: async (r) => {
+        const list = r.data?.shot_list || [];
+        const done = list.filter((x) => isDone(x.video_generating_status)).length;
+        const failed = list.filter((x) => isFailed(x.video_generating_status));
+        emit('agent-d', 'AGENT-D', `[VideoAgent] 视频生成中 ${done}/${list.length}`, 'render');
+        // Step 7: 对 failed 分镜重试
+        if (failed.length > 0 && !retried) {
+          retried = true;
+          emit('agent-d', 'AGENT-D', `[VideoAgent] 重试 ${failed.length} 个失败分镜`, 'render');
+          await this.giggle.generateVideosForShots({
+            project_id: projectId,
+            model: 'seedance-2.0-pro',
+            second_model: 'seedance15-pro',
+            shot_id: failed.map((s) => Number(s.id)),
+          });
+        }
+      },
     });
+    out.steps.push({ step: 'video.generate', shotCount: shotIds.length });
+    emit('agent-d', 'AGENT-D', '[VideoAgent] 分镜视频生成完成', 'render');
+
+    // ── Step 8: 导出完整视频 ──
+    emit('agent-e', 'AGENT-E', '[DistributionAgent] 导出完整视频...', 'distribute');
+    await this.giggle.exportEntireFilm({ project_id: projectId });
 
     const exported = await poll({
-      fn: async () => {
-        const r = await this.giggle.myAssets();
-        const current = (r.data || []).find((p) => p.project_id === projectId);
-        return current || {};
+      fn: () => this.giggle.getExportedAssets(projectId),
+      isDone: (r) => {
+        const asset = (r.data || []).find((p) => p.project_id === projectId);
+        return asset && (Number(asset.progress || 0) >= 100 || isDone(asset.project_status));
       },
-      isDone: (r) => Number(r.progress || 0) >= 1 || isSuccessStatus(r.project_status),
-      isFailed: (r) => isFailedStatus(r.project_status),
-      intervalMs: this.pollIntervalMs,
-      timeoutMs: this.pollTimeoutMs,
-      onTick: (r) => emit('agent-e', 'AGENT-E', `[DistributionAgent] export progress: ${Math.round((r.progress || 0) * 100)}%`, 'distribute'),
+      isFailed: (r) => {
+        const asset = (r.data || []).find((p) => p.project_id === projectId);
+        return asset && isFailed(asset.project_status);
+      },
+      intervalMs: interval,
+      timeoutMs: timeout,
+      onTick: (r) => {
+        const asset = (r.data || []).find((p) => p.project_id === projectId);
+        emit('agent-e', 'AGENT-E', `[DistributionAgent] 导出进度: ${asset?.progress || 0}%`, 'distribute');
+      },
     });
 
+    const asset = (exported.data || []).find((p) => p.project_id === projectId) || {};
     out.export = {
-      taskId: exportResp.data?.task_id,
-      status: exported.project_status || 'completed',
-      progress: exported.progress || 1,
-      videoDownloadUrl: exported.video_download_url || '',
-      videoSignedUrl: exported.video_signed_url || '',
-      videoThumbnailUrl: exported.video_thumbnail_url || '',
+      status: asset.project_status || 'completed',
+      progress: asset.progress || 100,
+      videoDownloadUrl: asset.video_download_url || '',
+      videoSignedUrl: asset.video_signed_url || '',
+      videoThumbnailUrl: asset.video_thumbnail_url || '',
+      videoDuration: asset.video_duration || 0,
     };
     out.steps.push({ step: 'video.export', ...out.export });
-
     out.status = 'completed';
-    emit('system', 'SYSTEM', '[Pipeline complete] Final video generated', 'distribute');
+    emit('system', 'SYSTEM', `[完成] 视频已导出: ${out.export.videoSignedUrl}`, 'distribute');
     return out;
   }
 }
