@@ -283,4 +283,5 @@ module.exports = {
   listStoryProjects, replaceProjectEpisodes, listProjectEpisodesByUuid,
   getProjectEpisodeByNo, updateProjectEpisode, upsertProjectCharacter,
   listProjectCharacters, upsertCharacterMapping, listCharacterMappings,
+  getGlobalCharacterByName, saveGlobalCharacter,
 };
