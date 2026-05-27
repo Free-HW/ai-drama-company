@@ -386,11 +386,9 @@
   }
 
   .terminal-body {
-    height: 340px; padding: 16px 20px; overflow: hidden;
+    height: 340px; padding: 16px 20px; overflow-y: auto;
     font-family: var(--mono); font-size: 13px; line-height: 1.85;
     position: relative;
-    mask-image: linear-gradient(180deg, transparent 0%, #000 14%, #000 100%);
-    -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 14%, #000 100%);
   }
   .terminal-log { display: flex; flex-direction: column; }
   .log-line { display: flex; gap: 14px; align-items: flex-start; padding: 1px 0; }
