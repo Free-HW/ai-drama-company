@@ -361,7 +361,14 @@ app.get('/api/agent/projects/:projectUuid', async (req, res) => {
     const episodes = await listProjectEpisodesByUuid(db, req.params.projectUuid);
     const characters = await listProjectCharacters(db, req.params.projectUuid);
     const mappings = await listCharacterMappings(db, req.params.projectUuid);
-    res.json({ ok: true, data: { project, episodes, characters, mappings } });
+    // 从 character_mappings 的 raw_json 提取角色图片
+    const charsWithImages = characters.map(c => {
+      const m = mappings.find(m => m.project_character_key === c.character_key);
+      let image_url = '', asset_id = '', voice_name = '';
+      if (m?.raw_json) { try { const r = JSON.parse(m.raw_json); image_url = r.image_url || r.image_signed_url || ''; asset_id = r.asset_id || ''; voice_name = r.voice_name || ''; } catch {} }
+      return { ...c, image_url, asset_id, voice_name };
+    });
+    res.json({ ok: true, data: { project, episodes, characters: charsWithImages, mappings, shots: [] } });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
@@ -455,6 +462,7 @@ app.post('/api/agent/projects/:projectUuid/episodes/:episodeNo/run', async (req,
           runId,
           giggleProjectId,
           exportUrl,
+          coverUrl: result.export?.videoThumbnailUrl || '',
         });
         await addLog(db, { runId, stage: 'distribute', tagClass: 'system', tagText: 'SYSTEM', payload: exportUrl ? `Final video: ${exportUrl}` : 'Final video exported.' });
 

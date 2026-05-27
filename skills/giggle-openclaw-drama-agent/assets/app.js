@@ -275,9 +275,33 @@
     });
   }
 
+  // 轮询动画 spinner
+  const _spinFrames = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
+  let _spinIdx = 0;
+  const _pollLines = new Map(); // key -> {el, base}
+  setInterval(() => {
+    _spinIdx = (_spinIdx + 1) % _spinFrames.length;
+    _pollLines.forEach(({el, base}) => {
+      el.textContent = _spinFrames[_spinIdx] + ' ' + base;
+    });
+  }, 100);
+
   function appendLine(tagClass, tagText, payload, stage) {
     if (!termLog || !termBody) return;
     setStage(stage || 'script');
+
+    const payloadStr = String(payload || '');
+    // 检测轮询类消息（含"中"/"中..."/"ing"/"轮询"/"等待"/"进度"）
+    const isPoll = /中\s*\d|generating|pending|processing|等待|轮询|进度|in progress/.test(payloadStr);
+
+    // 对同一 tagClass+关键词 的轮询行复用（更新而非追加）
+    const pollKey = isPoll ? tagClass + ':' + payloadStr.replace(/\d+/g, '#') : null;
+    if (pollKey && _pollLines.has(pollKey)) {
+      const {el, baseEl} = _pollLines.get(pollKey);
+      baseEl.textContent = payloadStr;
+      return;
+    }
+
     const line = document.createElement('div');
     line.className = 'log-line';
     const tag = document.createElement('span');
@@ -285,11 +309,29 @@
     tag.textContent = tagText;
     const text = document.createElement('span');
     text.className = 'log-text';
-    text.textContent = String(payload || '');
+
+    if (isPoll) {
+      const spinSpan = document.createElement('span');
+      spinSpan.style.cssText = 'color:var(--gold);margin-right:6px;';
+      spinSpan.textContent = _spinFrames[_spinIdx];
+      const baseSpan = document.createElement('span');
+      baseSpan.textContent = payloadStr;
+      text.appendChild(spinSpan);
+      text.appendChild(baseSpan);
+      _pollLines.set(pollKey, {el: spinSpan, baseEl: baseSpan});
+    } else {
+      text.textContent = payloadStr;
+      // 清理已完成的轮询行（同 tagClass 的）
+      for (const [k] of _pollLines) {
+        if (k.startsWith(tagClass + ':')) _pollLines.delete(k);
+      }
+    }
+
     line.appendChild(tag);
     line.appendChild(text);
     termLog.appendChild(line);
     termBody.scrollTop = termBody.scrollHeight;
+    while (termLog.children.length > 60) termLog.removeChild(termLog.firstChild);
   }
 
   function projectStatusLabel(p) {
@@ -440,21 +482,25 @@
           : ep.status === 'failed' || ep.status === 'partial_failed'
             ? { cls: 'queued', label: 'FAILED', pct: 10 }
             : { cls: 'queued', label: 'PLANNED', pct: 8 };
-      const preview = (ep.script_text || ep.outline || '').slice(0, 90);
+      // 封面图：优先用 giggle 导出的缩略图，否则用渐变占位
+      const thumbUrl = ep.cover_url || ep.thumbnail_url || '';
+      const thumbStyle = thumbUrl
+        ? `background-image:url('${thumbUrl}');background-size:cover;background-position:center;`
+        : '';
       return `
-        <div class="ep ep${(idx % 6) + 1}" data-ep-no="${ep.episode_no}" style="cursor:pointer;" title="点击查看完整剧本">
-          <div class="ep-thumb">
+        <div class="ep ep${(idx % 6) + 1}" data-ep-no="${ep.episode_no}" style="cursor:pointer;">
+          <div class="ep-thumb" style="${thumbStyle}">
             <span class="ep-status ${st.cls}">${st.label}</span>
             <div class="ep-thumb-text">EP${ep.episode_no} · ${data.project?.name || ''}</div>
           </div>
           <div class="ep-info">
             <div class="ep-show">${ep.title || `第${ep.episode_no}集`}</div>
-            <div class="ep-title" style="cursor:pointer;text-decoration:underline dotted;opacity:.8;" onclick="showScriptModal(event,${ep.episode_no})">${preview}…</div>
+            <div class="ep-title" style="font-size:11px;opacity:.6;height:auto;">${ep.giggle_project_id ? 'Giggle: ' + ep.giggle_project_id.slice(0,8) + '…' : '未关联 Giggle 项目'}</div>
             <div class="ep-bar"><span style="width:${st.pct}%;"></span></div>
-            <div class="ep-meta"><span>${ep.status || '-'}</span><span>${ep.giggle_project_id || '-'}</span></div>
+            <div class="ep-meta"><span>${ep.status || '-'}</span><span>${ep.export_url ? '✓ 视频' : '-'}</span></div>
             <div style="display:flex;gap:6px;margin-top:8px;">
-              <button onclick="showScriptModal(event,${ep.episode_no})" class="oclaw-btn" style="flex:1;font-size:11px;background:rgba(232,179,57,.15);border-color:rgba(232,179,57,.4);">📄 查看剧本</button>
-              <button id="run-ep-${ep.episode_no}" class="oclaw-btn" style="flex:1;font-size:11px;">▶ 生产</button>
+              <button onclick="showEpModal(event,${ep.episode_no})" class="oclaw-btn" style="flex:1;font-size:11px;background:rgba(232,179,57,.15);border-color:rgba(232,179,57,.4);">🎬 详情</button>
+              <button id="run-ep-${ep.episode_no}" class="oclaw-btn" style="flex:1;font-size:11px;" ${ep.status === 'running' ? 'disabled' : ''}>▶ 生产</button>
             </div>
           </div>
         </div>
@@ -464,6 +510,8 @@
     // Store episodes data for modal access
     window._currentEpisodes = eps;
     window._currentProjectName = data.project?.name || '';
+    window._currentChars = data.characters || [];
+    window._currentShots = data.shots || [];
 
     eps.forEach((ep) => {
       const btn = document.getElementById(`run-ep-${ep.episode_no}`);
@@ -745,30 +793,146 @@
 })();
 
 
-// ── 剧本弹窗 ──────────────────────────────────────────────
-function showScriptModal(e, epNo) {
+// ── 剧集详情弹窗 ──────────────────────────────────────────────
+function showEpModal(e, epNo) {
   if (e) e.stopPropagation();
   const eps = window._currentEpisodes || [];
   const ep = eps.find((x) => x.episode_no === epNo);
   if (!ep) return;
 
-  let modal = document.getElementById('scriptModal');
-  if (!modal) {
-    modal = document.createElement('div');
-    modal.id = 'scriptModal';
-    modal.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;padding:20px;';
-    modal.innerHTML = `
-      <div style="background:#111;border:1px solid rgba(232,179,57,.3);border-radius:12px;max-width:720px;width:100%;max-height:85vh;display:flex;flex-direction:column;overflow:hidden;">
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid rgba(255,255,255,.08);">
-          <div id="scriptModalTitle" style="font-size:15px;font-weight:700;color:#e8b339;"></div>
-          <button onclick="document.getElementById('scriptModal').remove()" style="background:none;border:1px solid rgba(255,255,255,.2);color:#fff;border-radius:6px;padding:4px 12px;cursor:pointer;font-size:13px;">✕ 关闭</button>
-        </div>
-        <div id="scriptModalBody" style="padding:20px;overflow-y:auto;flex:1;font-size:13px;line-height:1.8;color:#ccc;white-space:pre-wrap;font-family:monospace;"></div>
-      </div>`;
-    modal.addEventListener('click', (ev) => { if (ev.target === modal) modal.remove(); });
-    document.body.appendChild(modal);
-  }
+  const existing = document.getElementById('epDetailModal');
+  if (existing) existing.remove();
 
-  document.getElementById('scriptModalTitle').textContent = `${window._currentProjectName || ''} · ${ep.title || `第${epNo}集`}`;
-  document.getElementById('scriptModalBody').textContent = ep.script_text || ep.outline || '（暂无剧本内容）';
+  const projectName = window._currentProjectName || '';
+  const title = ep.title || `第${epNo}集`;
+  const coverUrl = ep.cover_url || ep.thumbnail_url || '';
+  const exportUrl = ep.export_url || '';
+  const giggleId = ep.giggle_project_id || '';
+
+  // 角色信息（从 window._currentChars 读取）
+  const chars = window._currentChars || [];
+  const charsHtml = chars.length ? chars.map(c => `
+    <div style="display:flex;align-items:center;gap:10px;padding:10px;background:#1a1a1f;border:1px solid #2a2a30;border-radius:6px;">
+      ${c.image_url ? `<img src="${c.image_url}" style="width:48px;height:48px;object-fit:cover;border-radius:4px;flex-shrink:0;" />` : `<div style="width:48px;height:48px;background:linear-gradient(135deg,#e8b339,#3a2510);border-radius:4px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:20px;">👤</div>`}
+      <div>
+        <div style="font-size:13px;font-weight:600;color:#f2f2f2;">${c.name || '-'}</div>
+        <div style="font-size:11px;color:#a4a4ab;margin-top:2px;">${c.gender || ''} ${c.voice_name ? '· ' + c.voice_name : ''}</div>
+        <div style="font-size:10px;color:#5e5e66;margin-top:2px;">asset: ${(c.asset_id || '-').slice(0,12)}</div>
+      </div>
+    </div>`).join('') : '<div style="color:#5e5e66;font-size:12px;">暂无角色数据</div>';
+
+  // 分镜信息（从 window._currentShots 读取）
+  const shots = (window._currentShots || []).filter(s => s.giggle_project_id === giggleId || !giggleId);
+  const shotsHtml = shots.length ? `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:8px;">
+      ${shots.slice(0,18).map(s => `
+        <div style="border:1px solid #2a2a30;border-radius:4px;overflow:hidden;background:#111;">
+          ${s.signed_url ? `<img src="${s.signed_url}" style="width:100%;aspect-ratio:9/16;object-fit:cover;display:block;" />` : `<div style="aspect-ratio:9/16;background:#1a1a1f;display:flex;align-items:center;justify-content:center;font-size:18px;">🎬</div>`}
+          <div style="padding:4px 6px;">
+            <div style="font-size:9px;color:#5e5e66;">SHOT ${s.shot_id || '-'}</div>
+            <div style="font-size:9px;color:${s.video_generating_status === 'completed' ? '#4ade80' : s.video_generating_status === 'failed' ? '#f87171' : '#e8b339'};">${s.video_generating_status || s.generating_status || 'pending'}</div>
+          </div>
+        </div>`).join('')}
+    </div>` : '<div style="color:#5e5e66;font-size:12px;">暂无分镜数据（生产后可见）</div>';
+
+  const modal = document.createElement('div');
+  modal.id = 'epDetailModal';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.88);backdrop-filter:blur(8px);display:flex;align-items:flex-start;justify-content:center;padding:24px;overflow-y:auto;';
+  modal.innerHTML = `
+    <div style="background:#0f0f12;border:1px solid rgba(232,179,57,.25);border-radius:12px;max-width:900px;width:100%;margin:auto;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.6);">
+
+      <!-- 顶栏 -->
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #1f1f24;background:#111114;position:sticky;top:0;z-index:2;">
+        <div>
+          <div style="font-family:'Instrument Serif',serif;font-style:italic;font-size:20px;color:#e8b339;">${projectName} · ${title}</div>
+          <div style="font-size:11px;color:#5e5e66;margin-top:3px;font-family:monospace;">EP${epNo} · ${ep.status || '-'} ${giggleId ? '· Giggle: ' + giggleId.slice(0,8) + '…' : ''}</div>
+        </div>
+        <button onclick="document.getElementById('epDetailModal').remove()" style="background:none;border:1px solid #2a2a30;color:#a4a4ab;border-radius:6px;padding:6px 14px;cursor:pointer;font-size:13px;transition:all .2s;" onmouseover="this.style.borderColor='#e8b339';this.style.color='#e8b339'" onmouseout="this.style.borderColor='#2a2a30';this.style.color='#a4a4ab'">✕ 关闭</button>
+      </div>
+
+      <!-- 封面 + 视频 -->
+      ${coverUrl || exportUrl ? `
+      <div style="position:relative;background:#0a0a0c;">
+        ${exportUrl ? `
+          <video controls style="width:100%;max-height:360px;display:block;background:#000;" poster="${coverUrl}">
+            <source src="${exportUrl}" type="video/mp4" />
+          </video>` : coverUrl ? `
+          <img src="${coverUrl}" style="width:100%;max-height:360px;object-fit:cover;display:block;" />` : ''}
+        ${exportUrl ? `<div style="position:absolute;top:10px;left:10px;background:rgba(74,222,128,.9);color:#000;font-family:monospace;font-size:10px;padding:3px 8px;border-radius:3px;font-weight:700;">✓ 视频已生成</div>` : ''}
+      </div>` : ''}
+
+      <!-- Tab 导航 -->
+      <div style="display:flex;border-bottom:1px solid #1f1f24;" id="epModalTabs">
+        <button class="ep-modal-tab active" data-panel="script" style="flex:1;padding:14px;background:rgba(232,179,57,.06);border:none;border-bottom:2px solid #e8b339;color:#e8b339;font-family:monospace;font-size:11px;letter-spacing:1px;cursor:pointer;">✨ 剧本</button>
+        <button class="ep-modal-tab" data-panel="chars" style="flex:1;padding:14px;background:none;border:none;border-bottom:2px solid transparent;color:#5e5e66;font-family:monospace;font-size:11px;letter-spacing:1px;cursor:pointer;">👥 角色</button>
+        <button class="ep-modal-tab" data-panel="shots" style="flex:1;padding:14px;background:none;border:none;border-bottom:2px solid transparent;color:#5e5e66;font-family:monospace;font-size:11px;letter-spacing:1px;cursor:pointer;">🎬 分镜</button>
+        <button class="ep-modal-tab" data-panel="info" style="flex:1;padding:14px;background:none;border:none;border-bottom:2px solid transparent;color:#5e5e66;font-family:monospace;font-size:11px;letter-spacing:1px;cursor:pointer;">ℹ️ 信息</button>
+      </div>
+
+      <!-- 剧本面板 -->
+      <div class="ep-modal-panel" data-panel="script" style="padding:24px;display:block;">
+        <div style="font-family:monospace;font-size:12px;color:#5e5e66;margin-bottom:12px;letter-spacing:1px;">SCRIPT · EP${epNo}</div>
+        <div style="font-size:13px;line-height:1.9;color:#d4d4d8;white-space:pre-wrap;background:#0a0a0c;padding:20px;border:1px solid #1f1f24;border-radius:6px;max-height:480px;overflow-y:auto;">${ep.script_text || ep.outline || '（暂无剧本内容）'}</div>
+      </div>
+
+      <!-- 角色面板 -->
+      <div class="ep-modal-panel" data-panel="chars" style="padding:24px;display:none;">
+        <div style="font-family:monospace;font-size:12px;color:#5e5e66;margin-bottom:12px;letter-spacing:1px;">CHARACTERS · ${chars.length} 个</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;">${charsHtml}</div>
+      </div>
+
+      <!-- 分镜面板 -->
+      <div class="ep-modal-panel" data-panel="shots" style="padding:24px;display:none;">
+        <div style="font-family:monospace;font-size:12px;color:#5e5e66;margin-bottom:12px;letter-spacing:1px;">STORYBOARD · ${shots.length} 个分镜</div>
+        ${shotsHtml}
+      </div>
+
+      <!-- 信息面板 -->
+      <div class="ep-modal-panel" data-panel="info" style="padding:24px;display:none;">
+        <div style="font-family:monospace;font-size:12px;color:#5e5e66;margin-bottom:12px;letter-spacing:1px;">EPISODE INFO</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          ${[
+            ['集数', `EP${epNo}`],
+            ['标题', ep.title || '-'],
+            ['状态', ep.status || '-'],
+            ['Giggle 项目', giggleId || '未关联'],
+            ['封面图', coverUrl ? '✓ 已生成' : '未生成'],
+            ['导出视频', exportUrl ? '✓ 已导出' : '未导出'],
+            ['run_id', ep.run_id || '-'],
+            ['更新时间', (ep.updated_at || '-').replace('T',' ').slice(0,16)],
+          ].map(([k,v]) => `
+            <div style="background:#111114;border:1px solid #1f1f24;padding:12px;border-radius:6px;">
+              <div style="font-family:monospace;font-size:10px;color:#5e5e66;letter-spacing:1px;margin-bottom:4px;">${k}</div>
+              <div style="font-size:13px;color:#f2f2f2;">${v}</div>
+            </div>`).join('')}
+        </div>
+        ${exportUrl ? `<div style="margin-top:16px;"><a href="${exportUrl}" target="_blank" style="display:inline-block;padding:10px 20px;background:#e8b339;color:#000;font-family:monospace;font-size:12px;font-weight:700;border-radius:4px;text-decoration:none;">⬇ 下载视频</a></div>` : ''}
+      </div>
+
+    </div>`;
+
+  // Tab 切换
+  modal.querySelectorAll('.ep-modal-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      modal.querySelectorAll('.ep-modal-tab').forEach(t => {
+        t.style.background = 'none';
+        t.style.borderBottom = '2px solid transparent';
+        t.style.color = '#5e5e66';
+      });
+      modal.querySelectorAll('.ep-modal-panel').forEach(p => p.style.display = 'none');
+      tab.style.background = 'rgba(232,179,57,.06)';
+      tab.style.borderBottom = '2px solid #e8b339';
+      tab.style.color = '#e8b339';
+      modal.querySelector(`.ep-modal-panel[data-panel="${tab.dataset.panel}"]`).style.display = 'block';
+    });
+  });
+
+  modal.addEventListener('click', (ev) => { if (ev.target === modal) modal.remove(); });
+  document.addEventListener('keydown', function esc(ev) {
+    if (ev.key === 'Escape') { modal.remove(); document.removeEventListener('keydown', esc); }
+  });
+  document.body.appendChild(modal);
 }
+
+// 兼容旧调用
+function showScriptModal(e, epNo) { showEpModal(e, epNo); }

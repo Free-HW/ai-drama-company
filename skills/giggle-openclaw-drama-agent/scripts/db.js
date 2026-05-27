@@ -201,11 +201,11 @@ async function getProjectEpisodeByNo(db, { projectUuid, episodeNo }) {
   return get(db, `SELECT * FROM project_episodes WHERE project_uuid=? AND episode_no=? LIMIT 1`, [projectUuid, Number(episodeNo)]);
 }
 
-async function updateProjectEpisode(db, { projectUuid, episodeNo, status, runId, giggleProjectId, exportUrl }) {
+async function updateProjectEpisode(db, { projectUuid, episodeNo, status, runId, giggleProjectId, exportUrl, coverUrl }) {
   const row = await getProjectEpisodeByNo(db, { projectUuid, episodeNo });
   if (!row) return;
-  await run(db, `UPDATE project_episodes SET status=?,run_id=?,giggle_project_id=?,export_url=?,updated_at=? WHERE project_uuid=? AND episode_no=?`,
-    [status||row.status, runId===undefined?row.run_id:runId, giggleProjectId===undefined?row.giggle_project_id:giggleProjectId, exportUrl===undefined?row.export_url:exportUrl, new Date().toISOString(), projectUuid, Number(episodeNo)]);
+  await run(db, `UPDATE project_episodes SET status=?,run_id=?,giggle_project_id=?,export_url=?,cover_url=?,updated_at=? WHERE project_uuid=? AND episode_no=?`,
+    [status||row.status, runId===undefined?row.run_id:runId, giggleProjectId===undefined?row.giggle_project_id:giggleProjectId, exportUrl===undefined?row.export_url:exportUrl, coverUrl===undefined?row.cover_url:coverUrl, new Date().toISOString(), projectUuid, Number(episodeNo)]);
 }
 
 async function upsertProjectCharacter(db, { projectUuid, characterKey, name, gender, persona, visualPrompt, voicePref }) {
