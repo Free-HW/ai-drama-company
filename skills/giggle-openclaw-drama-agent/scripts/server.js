@@ -387,6 +387,16 @@ app.post('/api/agent/projects/:projectUuid/episodes/:episodeNo/run', async (req,
     const episode = await getProjectEpisodeByNo(db, { projectUuid, episodeNo: Number(episodeNo) });
     if (!episode) return res.status(404).json({ ok: false, error: 'episode not found' });
 
+    // 清理旧 run 数据，保持本地数据完整性
+    if (episode.run_id) {
+      const oldRunId = episode.run_id;
+      for (const tbl of ['run_logs','scripts','storyboards','characters']) {
+        db.prepare(`DELETE FROM ${tbl} WHERE run_id=?`).run(oldRunId);
+      }
+      db.prepare('DELETE FROM runs WHERE run_id=?').run(oldRunId);
+      // character_mappings 不删除，重新生成时 saveGlobalCharacter 会用 is_active=0 停用旧映射再插入新的
+    }
+
     const runId = randomUUID();
     await createRun(db, {
       runId,
