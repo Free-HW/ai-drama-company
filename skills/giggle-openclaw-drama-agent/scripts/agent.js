@@ -167,11 +167,24 @@ class DramaAgent {
     out.steps.push({ step: 'storyboard.image', shotCount: shots.length, shots });
     emit('agent-c', 'AGENT-C', `[StoryboardAgent] 分镜图完成: ${shots.length} 张`, 'storyboard');
 
-    // ── Step 5: 优化视频提示词 ──
+    // ── Step 5: 优化视频提示词（异步，轮询 prompt_status=completed） ──
     emit('agent-c', 'AGENT-C', '[StoryboardAgent] 优化视频提示词...', 'storyboard');
     await this.giggle.optimizeVideoPrompts(projectId, 'seedance-2.0-pro');
-    // 等待 5 秒让优化完成（接口同步返回 null，无需轮询）
-    await new Promise(r => setTimeout(r, 5000));
+    await poll({
+      fn: () => this.giggle.listShots(projectId),
+      isDone: (r) => {
+        const list = r.data?.shot_list || [];
+        return list.length > 0 && list.every((s) => s.prompt_status === 'completed');
+      },
+      isFailed: (r) => (r.data?.shot_list || []).some((s) => s.prompt_status === 'failed'),
+      intervalMs: interval,
+      timeoutMs: 5 * 60 * 1000,
+      onTick: (r) => {
+        const list = r.data?.shot_list || [];
+        const done = list.filter((s) => s.prompt_status === 'completed').length;
+        emit('agent-c', 'AGENT-C', `[StoryboardAgent] 提示词优化中 ${done}/${list.length}`, 'storyboard');
+      },
+    });
     emit('agent-c', 'AGENT-C', '[StoryboardAgent] 提示词优化完成', 'storyboard');
 
     // ── Step 6: 批量生成分镜视频 ──
