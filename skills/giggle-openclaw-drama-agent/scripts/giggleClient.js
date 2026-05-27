@@ -76,7 +76,14 @@ class GiggleClient {
     return this.request('POST', '/api/v1/character-library/upload-local-image', { body: input });
   }
 
-  // 7. 生成全部分镜图
+  // 7. 生成分镜列表
+  autoGenerateStoryboard(projectId) {
+    return this.request('POST', '/api/v1/storyboard-shots/auto-generate', {
+      body: { project_id: projectId },
+    });
+  }
+
+  // 7b. 生成全部分镜图
   autoGenerateImages(projectId, model = 'seedream45') {
     return this.request('POST', '/api/v1/storyboard-shots/auto-generate-image', {
       body: { project_id: projectId, model },
