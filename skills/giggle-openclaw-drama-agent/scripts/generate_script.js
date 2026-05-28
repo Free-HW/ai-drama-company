@@ -71,7 +71,7 @@ function buildPrompt(epNo, total, idea, prevSummaries) {
     ? '【大结局】\n（一句话总结全剧结局，完整收尾，所有伏笔收束）'
     : '【下集预告】\n（一句话预告下集内容）';
 
-  return '你是专业短剧编剧。根据以下创意，生成第' + epNo + '集（共' + total + '集）的完整剧本。\n\n'
+  return '你是专业短剧编剧。根据以下创意，生成第' + epNo + '集（共' + total + '集）的完整剧本。\n【重要】全剧角色名必须保持一致，同一个人物在所有集中只能使用同一个名字，不得使用别名、字号、称号替代（例如：嬴政和秦始皇是同一人，全剧只能用其中一个名字）。\n\n'
     + '创意：' + idea
     + contextBlock
     + endingNote

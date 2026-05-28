@@ -128,6 +128,16 @@ class GiggleClient {
   optimizePromptForShot(input) {
     return this.request('POST', '/api/v1/storyboard-shots/optimize-prompt-for-shot', { body: input });
   }
+
+  // 16. 生成单个分镜图片（异步）
+  generateImageForShot(input) {
+    return this.request('POST', '/api/v1/storyboard-shots/generate-image', { body: input });
+  }
+
+  // 17. 获取图片生成模型列表
+  getImageModelList(scene = 'Video', modelType = 'Img2Img') {
+    return this.request('GET', '/api/v1/payment/model-list', { query: { scene, model_type: modelType } });
+  }
 }
 
 async function poll({ fn, isDone, isFailed, intervalMs, timeoutMs, onTick }) {

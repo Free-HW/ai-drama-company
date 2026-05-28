@@ -240,6 +240,18 @@ async function listCharacterMappings(db, projectUuid) {
  * 返回最新的同名角色记录（含 giggle_asset_id）
  */
 async function getGlobalCharacterByName(db, name) {
+  // 优先返回有角色库数据（_library）的记录，确保 library_character_id 可用
+  const withLibrary = get(db,
+    `SELECT pc.name, pc.gender, cm.giggle_character_id, cm.giggle_asset_id, cm.raw_json
+     FROM project_characters pc
+     JOIN character_mappings cm ON cm.project_uuid = pc.project_uuid
+       AND cm.project_character_key = pc.character_key
+       AND cm.is_active = 1
+     WHERE pc.name = ? AND cm.raw_json LIKE '%_library%'
+     ORDER BY cm.id DESC LIMIT 1`,
+    [name]
+  );
+  if (withLibrary) return withLibrary;
   return get(db,
     `SELECT pc.name, pc.gender, cm.giggle_character_id, cm.giggle_asset_id, cm.raw_json
      FROM project_characters pc
@@ -258,6 +270,18 @@ async function getGlobalCharacterByName(db, name) {
 async function saveGlobalCharacter(db, { projectUuid, name, gender, giggleCharacterId, giggleAssetId, rawJson }) {
   const now = new Date().toISOString();
   const key = name.replace(/\s+/g, '_').toLowerCase();
+
+  // 如果已有带角色库数据（_library）的记录，不覆盖，避免丢失正确的 library_character_id
+  const hasLibrary = get(db,
+    `SELECT cm.id FROM project_characters pc
+     JOIN character_mappings cm ON cm.project_uuid=pc.project_uuid AND cm.project_character_key=pc.character_key AND cm.is_active=1
+     WHERE pc.name=? AND cm.raw_json LIKE '%_library%' LIMIT 1`, [name]);
+  const newHasLibrary = rawJson && rawJson._library;
+  if (hasLibrary && !newHasLibrary) {
+    // 已有正确的角色库记录，新数据没有 _library，跳过覆盖
+    return;
+  }
+
   await run(db,
     `INSERT INTO project_characters (project_uuid,character_key,name,gender,persona,visual_prompt,voice_pref,created_at,updated_at)
      VALUES (?,?,?,?,?,?,?,?,?)

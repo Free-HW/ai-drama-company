@@ -179,7 +179,49 @@ class DramaAgent {
         emit('agent-c', 'AGENT-C', `[StoryboardAgent] 分镜图生成中 ${done}/${list.length}`, 'storyboard');
       },
     });
-    const shots = shotsDone.data?.shot_list || [];
+    let shots = shotsDone.data?.shot_list || [];
+
+    // 检查失败的分镜图，逐个重新生成
+    const failedImages = shots.filter((x) => isFailed(x.generating_status));
+    if (failedImages.length > 0) {
+      emit('agent-c', 'AGENT-C', `[StoryboardAgent] ${failedImages.length} 张分镜图失败，重新生成`, 'storyboard');
+      for (const shot of failedImages) {
+        try {
+          const imageList = (shot.reference_img_list || []).map((r) => r.asset_id).filter(Boolean);
+          await this.giggle.generateImageForShot({
+            project_id: projectId,
+            parent_id: Number(shot.id),
+            generate_type: 'Img2Img',
+            image_list: imageList,
+            prompt: shot.prompt || '',
+            generating_count: 1,
+            model: 'seedream45',
+          });
+          emit('agent-c', 'AGENT-C', `[StoryboardAgent] 重新生成分镜图 shot_id=${shot.id}`, 'storyboard');
+        } catch (e) {
+          emit('agent-c', 'AGENT-C', `[StoryboardAgent] 分镜图重试失败 shot_id=${shot.id}: ${e.message}`, 'storyboard');
+        }
+      }
+      // 轮询等待重试的分镜图完成
+      const retryIds = new Set(failedImages.map((s) => Number(s.id)));
+      const retryDone = await poll({
+        fn: () => this.giggle.listShots(projectId),
+        isDone: (r) => {
+          const list = (r.data?.shot_list || []).filter((s) => retryIds.has(Number(s.id)));
+          return list.length > 0 && list.every((x) => isDone(x.generating_status));
+        },
+        isFailed: () => false,
+        intervalMs: interval,
+        timeoutMs: timeout,
+        onTick: (r) => {
+          const list = (r.data?.shot_list || []).filter((s) => retryIds.has(Number(s.id)));
+          const done = list.filter((x) => isDone(x.generating_status)).length;
+          emit('agent-c', 'AGENT-C', `[StoryboardAgent] 分镜图重试进度 ${done}/${retryIds.size}`, 'storyboard');
+        },
+      });
+      shots = retryDone.data?.shot_list || shots;
+    }
+
     out.steps.push({ step: 'storyboard.image', shotCount: shots.length, shots });
     emit('agent-c', 'AGENT-C', `[StoryboardAgent] 分镜图完成: ${shots.length} 张`, 'storyboard');
 
