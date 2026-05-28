@@ -88,6 +88,17 @@ async function initSchema(db) {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       run_id TEXT, stage TEXT, tag_class TEXT, tag_text TEXT, payload TEXT, created_at TEXT
     );
+    CREATE TABLE IF NOT EXISTS story_characters (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      story_project_uuid TEXT NOT NULL,
+      name TEXT NOT NULL,
+      gender TEXT DEFAULT "",
+      library_character_id INTEGER NOT NULL,
+      giggle_asset_id TEXT DEFAULT "",
+      raw_json TEXT DEFAULT "{}",
+      created_at TEXT,
+      UNIQUE(story_project_uuid, name)
+    );
   `);
 }
 
@@ -239,61 +250,34 @@ async function listCharacterMappings(db, projectUuid) {
  * 按名字查全局角色库（不限 project_uuid）
  * 返回最新的同名角色记录（含 giggle_asset_id）
  */
-async function getGlobalCharacterByName(db, name) {
-  // 优先返回有角色库数据（_library）的记录（不限 is_active，避免停用逻辑导致漏查）
-  const withLibrary = get(db,
-    `SELECT pc.name, pc.gender, cm.giggle_character_id, cm.giggle_asset_id, cm.raw_json
-     FROM project_characters pc
-     JOIN character_mappings cm ON cm.project_uuid = pc.project_uuid
-       AND cm.project_character_key = pc.character_key
-     WHERE pc.name = ? AND cm.raw_json LIKE '%_library%'
-     ORDER BY cm.id DESC LIMIT 1`,
-    [name]
-  );
-  if (withLibrary) return withLibrary;
-  // 兜底：返回最新记录（不限 is_active）
+/**
+ * 按剧集项目+角色名查全局角色（story_characters 表）
+ * 返回 { name, gender, library_character_id } 或 null
+ */
+function getGlobalCharacterByName(db, name, storyProjectUuid) {
+  if (storyProjectUuid) {
+    return get(db,
+      'SELECT name, gender, library_character_id, giggle_asset_id FROM story_characters WHERE story_project_uuid=? AND name=? LIMIT 1',
+      [storyProjectUuid, name]
+    );
+  }
+  // 兜底：不限项目（向后兼容）
   return get(db,
-    `SELECT pc.name, pc.gender, cm.giggle_character_id, cm.giggle_asset_id, cm.raw_json
-     FROM project_characters pc
-     JOIN character_mappings cm ON cm.project_uuid = pc.project_uuid
-       AND cm.project_character_key = pc.character_key
-     WHERE pc.name = ?
-     ORDER BY cm.id DESC LIMIT 1`,
+    'SELECT name, gender, library_character_id, giggle_asset_id FROM story_characters WHERE name=? ORDER BY id DESC LIMIT 1',
     [name]
   );
 }
 
 /**
- * 保存角色到全局库（project_characters + character_mappings）
+ * 保存角色到剧集全局角色表（story_characters），已存在则跳过
  */
-async function saveGlobalCharacter(db, { projectUuid, name, gender, giggleCharacterId, giggleAssetId, rawJson }) {
+async function saveGlobalCharacter(db, { storyProjectUuid, name, gender, libraryCharacterId, giggleAssetId }) {
   const now = new Date().toISOString();
-  const key = name.replace(/\s+/g, '_').toLowerCase();
-
-  // 如果已有带角色库数据（_library）的记录，不覆盖，避免丢失正确的 library_character_id
-  const hasLibrary = get(db,
-    `SELECT cm.id FROM project_characters pc
-     JOIN character_mappings cm ON cm.project_uuid=pc.project_uuid AND cm.project_character_key=pc.character_key AND cm.is_active=1
-     WHERE pc.name=? AND cm.raw_json LIKE '%_library%' LIMIT 1`, [name]);
-  const newHasLibrary = rawJson && rawJson._library;
-  if (hasLibrary && !newHasLibrary) {
-    // 已有正确的角色库记录，新数据没有 _library，跳过覆盖
-    return;
-  }
-
   await run(db,
-    `INSERT INTO project_characters (project_uuid,character_key,name,gender,persona,visual_prompt,voice_pref,created_at,updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?)
-     ON CONFLICT(project_uuid,character_key) DO UPDATE SET name=excluded.name,gender=excluded.gender,updated_at=excluded.updated_at`,
-    [projectUuid, key, name, gender||'', '', '', '', now, now]
-  );
-  // 停用旧映射
-  await run(db, `UPDATE character_mappings SET is_active=0,updated_at=? WHERE project_uuid=? AND project_character_key=?`,
-    [now, projectUuid, key]);
-  await run(db,
-    `INSERT INTO character_mappings (project_uuid,project_character_key,giggle_character_id,giggle_asset_id,version,is_active,raw_json,created_at,updated_at)
-     VALUES (?,?,?,?,1,1,?,?,?)`,
-    [projectUuid, key, String(giggleCharacterId||''), String(giggleAssetId||''), JSON.stringify(rawJson||{}), now, now]
+    `INSERT INTO story_characters (story_project_uuid, name, gender, library_character_id, giggle_asset_id, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(story_project_uuid, name) DO NOTHING`,
+    [storyProjectUuid, name, gender || '', Number(libraryCharacterId) || 0, giggleAssetId || '', now]
   );
 }
 
