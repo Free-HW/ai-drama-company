@@ -231,10 +231,46 @@ class DramaAgent {
         const done = list.filter((x) => isDone(x.video_generating_status)).length;
         const failed = list.filter((x) => isFailed(x.video_generating_status));
         emit('agent-d', 'AGENT-D', `[VideoAgent] 视频生成中 ${done}/${list.length}`, 'render');
-        // Step 7: 对 failed 分镜重试
+        // Step 7: 对 failed 分镜先优化提示词，再重试生成
         if (failed.length > 0 && !retried) {
           retried = true;
-          emit('agent-d', 'AGENT-D', `[VideoAgent] 重试 ${failed.length} 个失败分镜`, 'render');
+          emit('agent-d', 'AGENT-D', `[VideoAgent] 重试 ${failed.length} 个失败分镜，先优化提示词`, 'render');
+
+          // 7a. 逐个调用 optimize-prompt-for-shot（异步触发）
+          for (const shot of failed) {
+            try {
+              await this.giggle.optimizePromptForShot({
+                project_id: projectId,
+                shot_id: Number(shot.id),
+                model: 'seedance-2.0-pro',
+              });
+              emit('agent-d', 'AGENT-D', `[VideoAgent] 提示词优化中 shot_id=${shot.id}`, 'render');
+            } catch (e) {
+              emit('agent-d', 'AGENT-D', `[VideoAgent] 提示词优化触发失败 shot_id=${shot.id}: ${e.message}`, 'render');
+            }
+          }
+
+          // 7b. 轮询所有失败分镜的 prompt_status，等全部 completed 再重试
+          const failedIds = new Set(failed.map((s) => Number(s.id)));
+          await poll({
+            fn: () => this.giggle.listShots(projectId),
+            isDone: (r) => {
+              const shots = (r.data?.shot_list || []).filter((s) => failedIds.has(Number(s.id)));
+              return shots.length > 0 && shots.every((s) => s.prompt_status === 'completed');
+            },
+            isFailed: () => false,
+            intervalMs: 5000,
+            timeoutMs: 300000,
+            onTick: (r) => {
+              const shots = (r.data?.shot_list || []).filter((s) => failedIds.has(Number(s.id)));
+              const done = shots.filter((s) => s.prompt_status === 'completed').length;
+              emit('agent-d', 'AGENT-D', `[VideoAgent] 提示词优化进度 ${done}/${failedIds.size}`, 'render');
+            },
+          });
+
+          emit('agent-d', 'AGENT-D', `[VideoAgent] 提示词优化完成，重新生成 ${failed.length} 个分镜视频`, 'render');
+
+          // 7c. 提示词优化完成后重新生成视频
           await this.giggle.generateVideosForShots({
             project_id: projectId,
             model: 'seedance-2.0-pro',

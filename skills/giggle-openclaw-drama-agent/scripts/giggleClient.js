@@ -123,6 +123,11 @@ class GiggleClient {
   addCharacterByLibrary(input) {
     return this.request('POST', '/api/v1/character/add_by_library', { body: input });
   }
+
+  // 15. 优化单个分镜视频提示词（异步）
+  optimizePromptForShot(input) {
+    return this.request('POST', '/api/v1/storyboard-shots/optimize-prompt-for-shot', { body: input });
+  }
 }
 
 async function poll({ fn, isDone, isFailed, intervalMs, timeoutMs, onTick }) {
