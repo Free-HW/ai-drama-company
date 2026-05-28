@@ -410,15 +410,30 @@ app.post('/api/agent/projects/:projectUuid/episodes/:episodeNo/run', async (req,
           pollIntervalMs: Number(process.env.POLL_INTERVAL_MS || 5000),
           pollTimeoutMs: Number(process.env.POLL_TIMEOUT_MS || 1800000),
         });
+        // EP1 用前端传参，后续集复用 EP1 存入 DB 的风格参数
+        const isFirstEp = Number(episodeNo) === 1;
+        const styleId = isFirstEp
+          ? (req.body?.styleId || 145)
+          : (project.style_id || req.body?.styleId || 145);
+        const videoDuration = isFirstEp
+          ? (req.body?.videoDuration || 60)
+          : (project.video_duration || req.body?.videoDuration || 60);
+
+        // EP1 完成后把风格参数存入 DB
+        if (isFirstEp) {
+          db.prepare('UPDATE story_projects SET style_id=?, video_duration=?, updated_at=? WHERE project_uuid=?')
+            .run(styleId, videoDuration, new Date().toISOString(), projectUuid);
+        }
+
         const result = await agent.run({
           idea: episode.script_text || episode.outline || project.idea,
           projectName: `${project.name}-EP${String(episodeNo).padStart(2, '0')}`,
           aspect: project.aspect || '16:9',
           language: project.language || 'zh-CN',
-          videoDuration: req.body?.videoDuration || 60,
-          styleId: req.body?.styleId || 145,
+          videoDuration,
+          styleId,
           videoModel: req.body?.videoModel || 'seedance-2.0-pro',
-          secondModel: req.body?.secondModel || 'seedance15-pro',
+          secondModel: req.body?.secondModel || 'seedance-2.0-pro',
           shotDuration: req.body?.shotDuration || 5,
           db,
           storyProjectUuid: projectUuid,

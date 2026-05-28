@@ -103,19 +103,22 @@ class DramaAgent {
           // 新角色：存入角色库和全局 DB
           emit('agent-b', 'AGENT-B', `[CastingAgent] 新角色入库: ${c.name}`, 'casting');
           try {
-            await this.giggle.uploadCharacterToLibrary({
+            const uploadResp = await this.giggle.uploadCharacterToLibrary({
               name: c.name,
               gender: c.gender || '',
               category: '',
               age: '',
               asset_id: c.asset_id,
             });
+            // 用角色库返回的 asset_id（library_asset_id），而非项目内的 asset_id
+            const libraryAssetId = uploadResp?.data?.asset_id || uploadResp?.data?.id || c.asset_id;
+            emit('agent-b', 'AGENT-B', `[CastingAgent] 角色入库成功: ${c.name} library_asset_id=${libraryAssetId}`, 'casting');
             await saveGlobalCharacter(db, {
               projectUuid: input.storyProjectUuid,
               name: c.name,
               gender: c.gender || '',
               giggleCharacterId: c.id,
-              giggleAssetId: c.asset_id,
+              giggleAssetId: libraryAssetId,
               rawJson: c,
             });
           } catch (e) {
