@@ -97,7 +97,8 @@ class DramaAgent {
             try {
               const raw = JSON.parse(existing.raw_json || '{}');
               // 优先用 upload 返回的角色库 ID，其次用原始 parent_id
-              libraryCharacterId = raw._library?.id || raw._library?.parent_id || raw.parent_id || 0;
+              // upload 返回 data[0].parent_id 才是角色库的 library_character_id
+              libraryCharacterId = raw._library?.parent_id || raw._library?.id || raw.parent_id || 0;
             } catch (_) {}
             const addBody = {
               project_id: projectId,
@@ -119,10 +120,12 @@ class DramaAgent {
             const uploadResp = await this.giggle.uploadCharacterToLibrary(uploadBody);
             emit('agent-b', 'AGENT-B', `[CastingAgent] upload返回: ${JSON.stringify(uploadResp)}`, 'casting');
             // 用角色库返回的 asset_id（library_asset_id），而非项目内的 asset_id
-            const libraryAssetId = uploadResp?.data?.asset_id || uploadResp?.data?.id || c.asset_id;
-            emit('agent-b', 'AGENT-B', `[CastingAgent] 角色入库成功: ${c.name} upload_data=${JSON.stringify(uploadResp?.data)}`, 'casting');
-            // rawJson 存 upload 返回的 data（含 library_character_id/parent_id），供后续集 add_by_library 使用
-            const libraryRawJson = uploadResp?.data ? { ...c, _library: uploadResp.data } : c;
+            // data 是数组，取第一个元素
+            const libraryData = Array.isArray(uploadResp?.data) ? uploadResp.data[0] : uploadResp?.data;
+            const libraryAssetId = libraryData?.asset_id || c.asset_id;
+            emit('agent-b', 'AGENT-B', `[CastingAgent] 角色入库成功: ${c.name} parent_id=${libraryData?.parent_id} id=${libraryData?.id}`, 'casting');
+            // rawJson 存 upload 返回的 data[0]，library_character_id = parent_id
+            const libraryRawJson = libraryData ? { ...c, _library: libraryData } : c;
             await saveGlobalCharacter(db, {
               projectUuid: input.storyProjectUuid,
               name: c.name,
