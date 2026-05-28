@@ -359,10 +359,15 @@
         const sJson = await sResp.json();
         if (!sResp.ok || !sJson.ok) throw new Error(sJson.error || 'status query failed');
 
-        (sJson.logs || []).forEach((l) => {
+        const newLogs = sJson.logs || [];
+        newLogs.forEach((l) => {
           appendLine(l.tagClass, l.tagText, l.payload, l.stage);
           lastLogId = Math.max(lastLogId, Number(l.id || 0));
         });
+        // 每次有新日志就刷新剧集列表（逐集显示）
+        if (newLogs.length > 0 && selectedStoryProjectUuid) {
+          renderStoryEpisodes(selectedStoryProjectUuid).catch(() => {});
+        }
 
         if (sJson.run?.status === 'completed' || sJson.run?.status === 'failed') {
           if (tip) tip.textContent = sJson.run.status === 'completed' ? '当前分集执行完成。' : '当前分集执行失败，请看日志。';
@@ -769,10 +774,14 @@
           const sJson = await sResp.json();
           if (!sResp.ok || !sJson.ok) throw new Error(sJson.error || 'status query failed');
 
-          (sJson.logs || []).forEach((l) => {
+          const newLogs2 = sJson.logs || [];
+          newLogs2.forEach((l) => {
             appendLine(l.tagClass, l.tagText, l.payload, l.stage);
             lastLogId = Math.max(lastLogId, Number(l.id || 0));
           });
+          if (newLogs2.length > 0 && selectedStoryProjectUuid) {
+            renderStoryEpisodes(selectedStoryProjectUuid).catch(() => {});
+          }
 
           if (sJson.run?.status === 'completed') {
             if (tip) tip.textContent = '执行完成。';
