@@ -1,11 +1,12 @@
 /**
  * 独立脚本：逐集调用 LLM 生成剧本并写入数据库
+ * 用法: node generate_script.js <projectUuid> <idea> <episodeCount> [scriptRunId]
  */
 require('dotenv').config({ path: require('path').join(__dirname, '..', '..', '..', '.env') });
 
 const { openDb, initSchema } = require('./db');
 
-const [,, projectUuid, idea, episodeCountStr] = process.argv;
+const [,, projectUuid, idea, episodeCountStr, scriptRunId] = process.argv;
 const total = Math.max(1, Number(episodeCountStr || 1));
 const GATEWAY = process.env.OPENCLAW_GATEWAY_URL || 'http://localhost:18789';
 const PASS = process.env.OPENCLAW_GATEWAY_PASSWORD || '';
@@ -23,6 +24,15 @@ function upsertEpisode(db, { projectUuid, episode_no, title, outline, script_tex
 function setProgress(db, projectUuid, done, total) {
   db.prepare(`UPDATE story_projects SET status=?, updated_at=? WHERE project_uuid=?`)
     .run(`generating:${done}/${total}`, new Date().toISOString(), projectUuid);
+}
+
+// 写日志到 run_logs 供前端控制台显示
+function writeLog(db, runId, { stage, tagClass, tagText, payload }) {
+  if (!runId) return;
+  try {
+    db.prepare(`INSERT INTO run_logs (run_id, stage, tag_class, tag_text, payload, created_at) VALUES (?,?,?,?,?,?)`)
+      .run(runId, stage || 'script', tagClass || 'agent-a', tagText || 'AGENT-A', payload || '', new Date().toISOString());
+  } catch (_) {}
 }
 
 async function callLLM(prompt) {
@@ -87,20 +97,30 @@ async function main() {
   const db = openDb();
   await initSchema(db);
 
-  console.log(`[generate_script] start: ${projectUuid} episodes=${total}`);
+  const log = (tagClass, tagText, payload, stage) => {
+    console.log(`[generate_script] ${payload}`);
+    writeLog(db, scriptRunId, { stage, tagClass, tagText, payload });
+  };
+
+  log('system', 'SYSTEM', `开始生成剧本，共 ${total} 集`, 'script');
   setProgress(db, projectUuid, 0, total);
+
+  // 更新 run 状态为 running
+  if (scriptRunId) {
+    try { db.prepare(`UPDATE runs SET status='running', updated_at=? WHERE run_id=?`).run(new Date().toISOString(), scriptRunId); } catch (_) {}
+  }
 
   let written = 0;
   for (let epNo = 1; epNo <= total; epNo++) {
+    log('agent-a', 'AGENT-A', `[ScriptAgent] 正在生成 EP${epNo}/${total}...`, 'script');
     try {
-      console.log(`[generate_script] generating EP${epNo}/${total}...`);
       const ep = await generateEpisode(epNo, total, idea);
       upsertEpisode(db, { projectUuid, ...ep });
       written++;
       setProgress(db, projectUuid, written, total);
-      console.log(`[generate_script] EP${epNo} done`);
+      log('agent-a', 'AGENT-A', `[ScriptAgent] EP${epNo} 完成 ✓ · ${ep.title}`, 'script');
     } catch (e) {
-      console.error(`[generate_script] EP${epNo} failed: ${e.message}, using fallback`);
+      log('system', 'SYSTEM', `EP${epNo} 生成失败: ${e.message}，使用降级内容`, 'script');
       const arcs = ['相遇','误解','靠近','心动','阻碍','表白','危机','和解','升华','圆满'];
       const arc = arcs[Math.min(epNo - 1, arcs.length - 1)];
       upsertEpisode(db, {
@@ -115,7 +135,12 @@ async function main() {
 
   db.prepare(`UPDATE story_projects SET status='planned', updated_at=? WHERE project_uuid=?`)
     .run(new Date().toISOString(), projectUuid);
-  console.log(`[generate_script] done: ${written}/${total} episodes`);
+
+  if (scriptRunId) {
+    try { db.prepare(`UPDATE runs SET status='completed', updated_at=? WHERE run_id=?`).run(new Date().toISOString(), scriptRunId); } catch (_) {}
+  }
+
+  log('system', 'SYSTEM', `[完成] 全部 ${written}/${total} 集剧本已生成`, 'script');
   process.exit(0);
 }
 
@@ -123,11 +148,12 @@ main().catch(e => {
   console.error('[generate_script] fatal:', e.message);
   try {
     const db = openDb();
-    // 如果已有集数写入，不覆盖为 failed
     const written = db.prepare('SELECT count(*) as n FROM project_episodes WHERE project_uuid=?').get(projectUuid)?.n || 0;
-    const finalStatus = written > 0 ? 'planned' : 'failed';
     db.prepare(`UPDATE story_projects SET status=?, updated_at=? WHERE project_uuid=?`)
-      .run(finalStatus, new Date().toISOString(), projectUuid);
+      .run(written > 0 ? 'planned' : 'failed', new Date().toISOString(), projectUuid);
+    if (scriptRunId) {
+      db.prepare(`UPDATE runs SET status='failed', updated_at=? WHERE run_id=?`).run(new Date().toISOString(), scriptRunId);
+    }
   } catch (_) {}
   process.exit(1);
 });

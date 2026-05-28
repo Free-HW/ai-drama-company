@@ -518,6 +518,17 @@
     window._currentShots = data.shots || [];
     window._currentProjectUuid = projectUuid;
 
+    // 剧本生成中：用 scriptRunId 接续控制台日志轮询
+    const scriptRunId = data.scriptRunId;
+    const isScriptGenerating = typeof data.project?.status === 'string' && data.project.status.startsWith('generating:');
+    if (isScriptGenerating && scriptRunId && !activeRunId && !pollTimer) {
+      const tip = document.getElementById('oclawTip');
+      if (tip) tip.textContent = `剧本生成中 ${data.project.status.split(':')[1]}，控制台实时显示进度...`;
+      if (termLog) termLog.innerHTML = '';
+      lastLogId = 0;
+      await pollRunStatus(scriptRunId, tip, null);
+    }
+
     eps.forEach((ep) => {
       const btn = document.getElementById(`run-ep-${ep.episode_no}`);
       if (!btn) return;

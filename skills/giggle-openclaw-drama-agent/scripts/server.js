@@ -368,7 +368,7 @@ app.get('/api/agent/projects/:projectUuid', async (req, res) => {
       if (m?.raw_json) { try { const r = JSON.parse(m.raw_json); image_url = r.image_url || r.image_signed_url || ''; asset_id = r.asset_id || ''; voice_name = r.voice_name || ''; } catch {} }
       return { ...c, image_url, asset_id, voice_name };
     });
-    res.json({ ok: true, data: { project, episodes, characters: charsWithImages, mappings, shots: [] } });
+    res.json({ ok: true, data: { project, episodes, characters: charsWithImages, mappings, shots: [], scriptRunId: project.script_run_id || '' } });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
@@ -648,14 +648,19 @@ function triggerScriptGeneration(projectUuid, idea, episodeCount) {
   }
   _generatingSet.add(projectUuid);
 
+  // 创建 script_run_id，写入 runs 表，供前端轮询日志
+  const scriptRunId = randomUUID();
+  createRun(db, { runId: scriptRunId, idea, projectName: `[剧本生成] ${projectUuid.slice(0,8)}` }).catch(() => {});
+  db.prepare('UPDATE story_projects SET script_run_id=? WHERE project_uuid=?').run(scriptRunId, projectUuid);
+
   const scriptPath = require('path').join(__dirname, 'generate_script.js');
-  const child = spawn(process.execPath, [scriptPath, projectUuid, idea, String(episodeCount || 1)], {
+  const child = spawn(process.execPath, [scriptPath, projectUuid, idea, String(episodeCount || 1), scriptRunId], {
     detached: true,
     stdio: ['ignore', 'inherit', 'inherit'],
     env: process.env,
     cwd: process.cwd(),
   });
-  child.unref(); // 父进程退出不影响子进程
+  child.unref();
 
   child.on('exit', (code) => {
     _generatingSet.delete(projectUuid);
