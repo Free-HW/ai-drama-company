@@ -356,7 +356,7 @@
       if (!activeRunId) return;
       try {
         const sResp = await fetch(`/api/agent/status/${activeRunId}?since_id=${lastLogId}`);
-        const sJson = await sResp.json();
+        const sJson = await sResp.json().catch(() => ({}));
         if (!sResp.ok || !sJson.ok) throw new Error(sJson.error || 'status query failed');
 
         const newLogs = sJson.logs || [];
@@ -771,7 +771,7 @@
         if (!activeRunId) return;
         try {
           const sResp = await fetch(`/api/agent/status/${activeRunId}?since_id=${lastLogId}`);
-          const sJson = await sResp.json();
+          const sJson = await sResp.json().catch(() => ({}));
           if (!sResp.ok || !sJson.ok) throw new Error(sJson.error || 'status query failed');
 
           const newLogs2 = sJson.logs || [];
