@@ -240,24 +240,23 @@ async function listCharacterMappings(db, projectUuid) {
  * 返回最新的同名角色记录（含 giggle_asset_id）
  */
 async function getGlobalCharacterByName(db, name) {
-  // 优先返回有角色库数据（_library）的记录，确保 library_character_id 可用
+  // 优先返回有角色库数据（_library）的记录（不限 is_active，避免停用逻辑导致漏查）
   const withLibrary = get(db,
     `SELECT pc.name, pc.gender, cm.giggle_character_id, cm.giggle_asset_id, cm.raw_json
      FROM project_characters pc
      JOIN character_mappings cm ON cm.project_uuid = pc.project_uuid
        AND cm.project_character_key = pc.character_key
-       AND cm.is_active = 1
      WHERE pc.name = ? AND cm.raw_json LIKE '%_library%'
      ORDER BY cm.id DESC LIMIT 1`,
     [name]
   );
   if (withLibrary) return withLibrary;
+  // 兜底：返回最新记录（不限 is_active）
   return get(db,
     `SELECT pc.name, pc.gender, cm.giggle_character_id, cm.giggle_asset_id, cm.raw_json
      FROM project_characters pc
      JOIN character_mappings cm ON cm.project_uuid = pc.project_uuid
        AND cm.project_character_key = pc.character_key
-       AND cm.is_active = 1
      WHERE pc.name = ?
      ORDER BY cm.id DESC LIMIT 1`,
     [name]
