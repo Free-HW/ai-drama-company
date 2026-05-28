@@ -323,8 +323,13 @@ app.post('/api/agent/projects', async (req, res) => {
     const project0 = await getStoryProject(db, projectUuid);
     res.json({ ok: true, data: { project: project0, episodes: [], generating: true } });
 
-    // 异步生成剧本（走 generate_script.js 子进程，支持逐集写入和控制台日志）
-    triggerScriptGeneration(projectUuid, idea.trim(), Number(episodeCount || 1));
+    // 异步：先匹配风格再生成剧本
+    (async () => {
+      const styleId = await matchStyleId(idea.trim());
+      db.prepare('UPDATE story_projects SET style_id=?, updated_at=? WHERE project_uuid=?')
+        .run(styleId, new Date().toISOString(), projectUuid);
+      triggerScriptGeneration(projectUuid, idea.trim(), Number(episodeCount || 1));
+    })();
     return; // already responded
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
@@ -410,20 +415,9 @@ app.post('/api/agent/projects/:projectUuid/episodes/:episodeNo/run', async (req,
           pollIntervalMs: Number(process.env.POLL_INTERVAL_MS || 5000),
           pollTimeoutMs: Number(process.env.POLL_TIMEOUT_MS || 1800000),
         });
-        // EP1 用前端传参，后续集复用 EP1 存入 DB 的风格参数
-        const isFirstEp = Number(episodeNo) === 1;
-        const styleId = isFirstEp
-          ? (req.body?.styleId || 145)
-          : (project.style_id || req.body?.styleId || 145);
-        const videoDuration = isFirstEp
-          ? (req.body?.videoDuration || 60)
-          : (project.video_duration || req.body?.videoDuration || 60);
-
-        // EP1 完成后把风格参数存入 DB
-        if (isFirstEp) {
-          db.prepare('UPDATE story_projects SET style_id=?, video_duration=?, updated_at=? WHERE project_uuid=?')
-            .run(styleId, videoDuration, new Date().toISOString(), projectUuid);
-        }
+        // 风格参数：优先用 DB 存储的（创建项目时已智能匹配），其次前端传参，最后默认值
+        const styleId = project.style_id || req.body?.styleId || 146;
+        const videoDuration = project.video_duration || req.body?.videoDuration || 60;
 
         const result = await agent.run({
           idea: episode.script_text || episode.outline || project.idea,
@@ -641,6 +635,42 @@ app.post('/api/agent/projects/:projectUuid/regenerate-script', async (req, res) 
 
 const _generatingSet = new Set();
 const { spawn } = require('child_process');
+
+// Giggle 支持的风格列表（缓存，避免重复请求）
+const GIGGLE_STYLES = [
+  { id: 142, name: '3D古风', desc: '3D国风仙侠，史诗幻想，适合古装、修仙、宫廷' },
+  { id: 143, name: '2D漫剧', desc: '日漫国漫二次元，适合青春、校园、轻喜剧' },
+  { id: 144, name: '吉卜力', desc: '治愈手绘，温暖生活气息，适合温情、家庭、治愈' },
+  { id: 145, name: '皮克斯', desc: '3D卡通动画，情绪强烈，适合喜剧、奇幻、儿童' },
+  { id: 146, name: '写实风格', desc: '电影级写实，真实光影，适合都市、商战、悬疑、爱情' },
+  { id: 147, name: '二次元', desc: '标准动漫画风，适合二次元、恋爱、热血' },
+  { id: 148, name: '国风水墨', desc: '中国水墨，意境留白，适合古风、诗意、历史' },
+];
+
+async function matchStyleId(idea) {
+  try {
+    const styleList = GIGGLE_STYLES.map(s => s.id + '. ' + s.name + '：' + s.desc).join('\n');
+    const prompt = '根据以下短剧创意，从风格列表中选择最合适的一个风格，只返回风格ID数字，不要任何其他内容。\n\n创意：' + idea + '\n\n风格列表：\n' + styleList;
+    const GATEWAY = process.env.OPENCLAW_GATEWAY_URL || 'http://localhost:18789';
+    const PASS = process.env.OPENCLAW_GATEWAY_PASSWORD || '';
+    const resp = await fetch(GATEWAY + '/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + PASS },
+      body: JSON.stringify({ model: 'openclaw', messages: [{ role: 'user', content: prompt }], temperature: 0.1 }),
+    });
+    const json = await resp.json();
+    const text = (json?.choices?.[0]?.message?.content || '').trim();
+    const matched = parseInt(text.match(/\d+/)?.[0] || '0');
+    const valid = GIGGLE_STYLES.find(s => s.id === matched);
+    if (valid) {
+      console.log('[StyleMatch] idea matched style:', valid.id, valid.name);
+      return valid.id;
+    }
+  } catch (e) {
+    console.warn('[StyleMatch] failed:', e.message);
+  }
+  return 146; // 默认写实风格（都市剧最常见）
+}
 
 function triggerScriptGeneration(projectUuid, idea, episodeCount) {
   if (_generatingSet.has(projectUuid)) {
