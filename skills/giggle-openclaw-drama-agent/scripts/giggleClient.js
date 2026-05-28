@@ -119,9 +119,9 @@ class GiggleClient {
     return this.request('GET', '/api/v1/project/my_assets', { query: { project_id: projectId } });
   }
 
-  // 14. 应用角色库角色
-  applyCharacterLibrary(input) {
-    return this.request('POST', '/api/v1/character-library/apply', { body: input });
+  // 14. 从角色库添加角色到项目
+  addCharacterByLibrary(input) {
+    return this.request('POST', '/api/v1/character/add_by_library', { body: input });
   }
 }
 

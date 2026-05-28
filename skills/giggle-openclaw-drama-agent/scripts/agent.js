@@ -89,13 +89,24 @@ class DramaAgent {
       for (const c of characterList) {
         const existing = await getGlobalCharacterByName(db, c.name);
         if (existing && existing.giggle_asset_id) {
-          // 同名角色：用已有 asset_id 替换本集角色
+          // 同名角色：从角色库添加到本集项目
           emit('agent-b', 'AGENT-B', `[CastingAgent] 复用已有角色: ${c.name}`, 'casting');
           try {
-            await this.giggle.applyCharacterLibrary({
-              child_id: String(c.id),
-              asset_id: existing.giggle_asset_id,
-            });
+            // library_character_id = EP1 存的 raw_json.parent_id
+            let libraryCharacterId = 0;
+            try {
+              const raw = JSON.parse(existing.raw_json || '{}');
+              // 优先用 upload 返回的角色库 ID，其次用原始 parent_id
+              libraryCharacterId = raw._library?.id || raw._library?.parent_id || raw.parent_id || 0;
+            } catch (_) {}
+            const addBody = {
+              project_id: projectId,
+              parent_id: c.parent_id || 0,
+              library_character_id: libraryCharacterId,
+            };
+            emit('agent-b', 'AGENT-B', `[CastingAgent] add_by_library请求: ${JSON.stringify(addBody)}`, 'casting');
+            const addResp = await this.giggle.addCharacterByLibrary(addBody);
+            emit('agent-b', 'AGENT-B', `[CastingAgent] add_by_library返回: ${JSON.stringify(addResp)}`, 'casting');
           } catch (e) {
             emit('agent-b', 'AGENT-B', `[CastingAgent] 角色替换失败 ${c.name}: ${e.message}`, 'casting');
           }
@@ -103,23 +114,22 @@ class DramaAgent {
           // 新角色：存入角色库和全局 DB
           emit('agent-b', 'AGENT-B', `[CastingAgent] 新角色入库: ${c.name}`, 'casting');
           try {
-            const uploadResp = await this.giggle.uploadCharacterToLibrary({
-              name: c.name,
-              gender: c.gender || '',
-              category: '',
-              age: '',
-              asset_id: c.asset_id,
-            });
+            const uploadBody = { name: c.name, gender: c.gender || '', category: '', age: '', asset_id: c.asset_id };
+            emit('agent-b', 'AGENT-B', `[CastingAgent] upload请求: ${JSON.stringify(uploadBody)}`, 'casting');
+            const uploadResp = await this.giggle.uploadCharacterToLibrary(uploadBody);
+            emit('agent-b', 'AGENT-B', `[CastingAgent] upload返回: ${JSON.stringify(uploadResp)}`, 'casting');
             // 用角色库返回的 asset_id（library_asset_id），而非项目内的 asset_id
             const libraryAssetId = uploadResp?.data?.asset_id || uploadResp?.data?.id || c.asset_id;
-            emit('agent-b', 'AGENT-B', `[CastingAgent] 角色入库成功: ${c.name} library_asset_id=${libraryAssetId}`, 'casting');
+            emit('agent-b', 'AGENT-B', `[CastingAgent] 角色入库成功: ${c.name} upload_data=${JSON.stringify(uploadResp?.data)}`, 'casting');
+            // rawJson 存 upload 返回的 data（含 library_character_id/parent_id），供后续集 add_by_library 使用
+            const libraryRawJson = uploadResp?.data ? { ...c, _library: uploadResp.data } : c;
             await saveGlobalCharacter(db, {
               projectUuid: input.storyProjectUuid,
               name: c.name,
               gender: c.gender || '',
               giggleCharacterId: c.id,
               giggleAssetId: libraryAssetId,
-              rawJson: c,
+              rawJson: libraryRawJson,
             });
           } catch (e) {
             emit('agent-b', 'AGENT-B', `[CastingAgent] 角色入库失败 ${c.name}: ${e.message}`, 'casting');
