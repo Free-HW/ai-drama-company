@@ -244,13 +244,16 @@ class DramaAgent {
 
     // 轮询视频生成状态，对 failed 的分镜自动重试一次
     let retried = false;
+    let retryingIds = new Set(); // 正在重试的分镜 ID，不计入完成判断
     await poll({
       fn: () => this.giggle.listShots(projectId),
       isDone: (r) => {
         const list = r.data?.shot_list || [];
-        return list.length > 0 && list.every(
-          (x) => isDone(x.video_generating_status) || x.video_generating_status === 'waiting'
-        );
+        if (list.length === 0) return false;
+        // 正在重试的分镜等待单独的重试轮询完成，这里暂时排除
+        const pending = list.filter((x) => !retryingIds.has(Number(x.id)));
+        return pending.every((x) => isDone(x.video_generating_status) || isFailed(x.video_generating_status))
+          && retryingIds.size === 0;
       },
       isFailed: () => false, // 不整体失败，单独重试
       intervalMs: interval,
@@ -258,11 +261,12 @@ class DramaAgent {
       onTick: async (r) => {
         const list = r.data?.shot_list || [];
         const done = list.filter((x) => isDone(x.video_generating_status)).length;
-        const failed = list.filter((x) => isFailed(x.video_generating_status));
+        const failed = list.filter((x) => isFailed(x.video_generating_status) && !retryingIds.has(Number(x.id)));
         emit('agent-d', 'AGENT-D', `[VideoAgent] 视频生成中 ${done}/${list.length}`, 'render');
         // Step 7: 对 failed 分镜先优化提示词，再重试生成
         if (failed.length > 0 && !retried) {
           retried = true;
+          failed.forEach((s) => retryingIds.add(Number(s.id)));
           emit('agent-d', 'AGENT-D', `[VideoAgent] 重试 ${failed.length} 个失败分镜，先优化提示词`, 'render');
 
           // 7a. 逐个调用 optimize-prompt-for-shot（异步触发）
@@ -306,6 +310,24 @@ class DramaAgent {
             second_model: 'seedance-2.0-pro',
             shot_id: failed.map((s) => Number(s.id)),
           });
+
+          // 7d. 等待重试分镜完成，再清除 retryingIds 让外层 isDone 正常退出
+          await poll({
+            fn: () => this.giggle.listShots(projectId),
+            isDone: (r) => {
+              const list = (r.data?.shot_list || []).filter((s) => retryingIds.has(Number(s.id)));
+              return list.length > 0 && list.every((x) => isDone(x.video_generating_status) || isFailed(x.video_generating_status));
+            },
+            isFailed: () => false,
+            intervalMs: interval,
+            timeoutMs: timeout,
+            onTick: (r) => {
+              const list = (r.data?.shot_list || []).filter((s) => retryingIds.has(Number(s.id)));
+              const done = list.filter((x) => isDone(x.video_generating_status)).length;
+              emit('agent-d', 'AGENT-D', `[VideoAgent] 重试分镜进度 ${done}/${retryingIds.size}`, 'render');
+            },
+          });
+          retryingIds.clear(); // 重试完成，外层 isDone 可以正常退出
         }
       },
     });
