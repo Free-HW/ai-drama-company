@@ -1,16 +1,32 @@
 /**
- * 独立脚本：生成剧本并写入数据库
- * 用法: node generate_script.js <projectUuid> <idea> <episodeCount>
- * 父进程退出后此脚本继续运行（detached）
+ * 独立脚本：生成剧本并写入数据库（逐集写入）
  */
 require('dotenv').config({ path: require('path').join(__dirname, '..', '..', '..', '.env') });
 
-const { openDb, initSchema, replaceProjectEpisodes, setStoryProjectStatus } = require('./db');
+const { openDb, initSchema, setStoryProjectStatus, getProjectEpisodeByNo, updateProjectEpisode } = require('./db');
+const sqlite3 = require('better-sqlite3');
 
 const [,, projectUuid, idea, episodeCountStr] = process.argv;
 const total = Math.max(1, Number(episodeCountStr || 1));
 const GATEWAY = process.env.OPENCLAW_GATEWAY_URL || 'http://localhost:18789';
 const PASS = process.env.OPENCLAW_GATEWAY_PASSWORD || '';
+
+// 直接写单集到 DB
+function upsertEpisode(db, { projectUuid, episode_no, title, outline, script_text }) {
+  const now = new Date().toISOString();
+  db.prepare(`INSERT INTO project_episodes (project_uuid,episode_no,title,outline,script_text,status,created_at,updated_at)
+    VALUES (?,?,?,?,?,?,?,?)
+    ON CONFLICT(project_uuid,episode_no) DO UPDATE SET
+      title=excluded.title, outline=excluded.outline, script_text=excluded.script_text,
+      status='scripted', updated_at=excluded.updated_at`)
+    .run(projectUuid, episode_no, title, outline, script_text, 'scripted', now, now);
+}
+
+// 写进度状态（generating:N/total）
+function setProgress(db, projectUuid, done, total) {
+  db.prepare(`UPDATE story_projects SET status=?, updated_at=? WHERE project_uuid=?`)
+    .run(`generating:${done}/${total}`, new Date().toISOString(), projectUuid);
+}
 
 async function main() {
   const db = openDb();
@@ -41,11 +57,6 @@ Shot 1（7s）
 
 【高能台词】
 1. 角色名："台词"
-2. 角色名："台词"
-3. 角色名："台词"
-
-【音频设计】
-（整集音频风格描述）
 
 【下集预告】
 （一句话预告下集内容）
@@ -53,7 +64,9 @@ Shot 1（7s）
 所有${total}集按顺序输出。`;
 
   try {
-    console.log(`[generate_script] start: ${projectUuid} idea="${idea}" episodes=${total}`);
+    console.log(`[generate_script] start: ${projectUuid} episodes=${total}`);
+    setProgress(db, projectUuid, 0, total);
+
     const resp = await fetch(`${GATEWAY}/v1/chat/completions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${PASS}` },
@@ -61,39 +74,51 @@ Shot 1（7s）
     });
     const json = await resp.json();
     const text = json?.choices?.[0]?.message?.content || '';
-    console.log(`[generate_script] LLM response: ${text.length} chars, hasShot=${text.includes('Shot')}`);
+    console.log(`[generate_script] LLM response: ${text.length} chars`);
 
-    let episodes = [];
-    if (text.includes('Shot')) {
-      const parts = text.split(/(?=###\s*🎬\s*第\d+集)/);
-      episodes = parts.filter(p => p.trim().startsWith('###')).slice(0, total).map((part, i) => {
-        const titleMatch = part.match(/###\s*🎬\s*(第\d+集[^\n]*)/);
-        const outlineMatch = part.match(/【剧情概要】\s*([\s\S]*?)(?=【|$)/);
-        return {
-          episode_no: i + 1,
-          title: titleMatch ? titleMatch[1].trim() : `第${i + 1}集`,
-          outline: outlineMatch ? outlineMatch[1].trim().slice(0, 200) : '',
-          script_text: part.trim(),
-          status: 'scripted',
-        };
+    // 逐集解析并立即写入 DB
+    const parts = text.split(/(?=###\s*🎬\s*第\d+集)/);
+    const epParts = parts.filter(p => p.trim().startsWith('###')).slice(0, total);
+
+    let written = 0;
+    for (let i = 0; i < epParts.length; i++) {
+      const part = epParts[i];
+      const titleMatch = part.match(/###\s*🎬\s*(第\d+集[^\n]*)/);
+      const outlineMatch = part.match(/【剧情概要】\s*([\s\S]*?)(?=【|$)/);
+      upsertEpisode(db, {
+        projectUuid,
+        episode_no: i + 1,
+        title: titleMatch ? titleMatch[1].trim() : `第${i + 1}集`,
+        outline: outlineMatch ? outlineMatch[1].trim().slice(0, 200) : '',
+        script_text: part.trim(),
       });
+      written++;
+      setProgress(db, projectUuid, written, total);
+      console.log(`[generate_script] EP${i + 1} written`);
     }
 
-    if (episodes.length === 0) {
-      // 降级：结构化占位剧本
+    // 降级：LLM 没有按格式输出时
+    if (written === 0) {
       const arcs = ['相遇','误解','靠近','心动','阻碍','表白','危机','和解','升华','圆满'];
-      episodes = Array.from({ length: total }, (_, i) => {
+      for (let i = 0; i < total; i++) {
         const arc = arcs[Math.min(i, arcs.length - 1)];
-        return { episode_no: i+1, title: `第${i+1}集·${arc}`, outline: idea, script_text: `【第${i+1}集·${arc}】\n■ 核心创意：${idea}`, status: 'scripted' };
-      });
+        upsertEpisode(db, {
+          projectUuid, episode_no: i + 1,
+          title: `第${i + 1}集·${arc}`, outline: idea,
+          script_text: `【第${i + 1}集·${arc}】\n■ 核心创意：${idea}`,
+        });
+        written++;
+        setProgress(db, projectUuid, written, total);
+      }
     }
 
-    await replaceProjectEpisodes(db, { projectUuid, episodes });
-    await setStoryProjectStatus(db, { projectUuid, status: 'planned' });
-    console.log(`[generate_script] done: ${episodes.length} episodes written`);
+    db.prepare(`UPDATE story_projects SET status='planned', updated_at=? WHERE project_uuid=?`)
+      .run(new Date().toISOString(), projectUuid);
+    console.log(`[generate_script] done: ${written} episodes`);
   } catch (e) {
     console.error(`[generate_script] failed: ${e.message}`);
-    await setStoryProjectStatus(db, { projectUuid, status: 'failed' });
+    db.prepare(`UPDATE story_projects SET status='failed', updated_at=? WHERE project_uuid=?`)
+      .run(new Date().toISOString(), projectUuid);
   }
   process.exit(0);
 }

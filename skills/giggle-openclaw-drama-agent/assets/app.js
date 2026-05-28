@@ -341,6 +341,7 @@
   }
 
   function storyStatusLabel(p) {
+    if (typeof p.status === 'string' && p.status.startsWith('generating:')) return '剧本生成中 ' + p.status.split(':')[1];
     if (p.status === 'completed') return 'COMPLETED';
     if (p.status === 'partial_failed' || p.status === 'failed') return 'FAILED';
     if (p.status === 'planned' || p.status === 'draft') return 'PLANNED';
@@ -561,6 +562,8 @@
     }
     renderStoryProjects();
     if (selectedStoryProjectUuid) await renderStoryEpisodes(selectedStoryProjectUuid);
+    // 如果有剧本生成中的项目，启动自动轮询
+    if (typeof pollScriptGen === 'function' && storyProjects.some(p => typeof p.status === 'string' && p.status.startsWith('generating:'))) pollScriptGen();
   }
 
   async function createStoryProjectFromInput() {
@@ -817,6 +820,20 @@
     if (runBtn) runBtn.addEventListener('click', createStoryProjectFromInput);
     if (refreshBtn) refreshBtn.addEventListener('click', refreshStoryWorkspace);
     refreshStoryWorkspace().then(autoResumePolling);
+
+    // 剧本生成中时自动轮询刷新
+    let _scriptGenTimer = null;
+    function pollScriptGen() {
+      if (_scriptGenTimer) return;
+      _scriptGenTimer = setInterval(async () => {
+        const hasGen = storyProjects.some(p => typeof p.status === 'string' && p.status.startsWith('generating:'));
+        if (!hasGen) { clearInterval(_scriptGenTimer); _scriptGenTimer = null; return; }
+        await refreshStoryWorkspace();
+      }, 3000);
+    }
+    setTimeout(() => {
+      if (storyProjects.some(p => typeof p.status === 'string' && p.status.startsWith('generating:'))) pollScriptGen();
+    }, 1000);
   }
 
   loadX2CShowcase();
