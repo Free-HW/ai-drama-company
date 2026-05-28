@@ -323,22 +323,8 @@ app.post('/api/agent/projects', async (req, res) => {
     const project0 = await getStoryProject(db, projectUuid);
     res.json({ ok: true, data: { project: project0, episodes: [], generating: true } });
 
-    // 异步生成剧本
-    (async () => {
-      try {
-        const giggle = new GiggleClient({
-          baseUrl: process.env.GIGGLE_BASE_URL,
-          apiKey: process.env.GIGGLE_API_KEY,
-          authMode: process.env.GIGGLE_AUTH_MODE || 'x-auth',
-        });
-        const episodes = await buildEpisodePlanAI({ idea: idea.trim(), episodeCount: Number(episodeCount || 1), giggle });
-        await replaceProjectEpisodes(db, { projectUuid, episodes });
-        await setStoryProjectStatus(db, { projectUuid, status: 'planned' });
-      } catch (e) {
-        console.error('[AI Script] async generation failed:', e.message);
-        await setStoryProjectStatus(db, { projectUuid, status: 'failed' });
-      }
-    })();
+    // 异步生成剧本（走 generate_script.js 子进程，支持逐集写入和控制台日志）
+    triggerScriptGeneration(projectUuid, idea.trim(), Number(episodeCount || 1));
     return; // already responded
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
