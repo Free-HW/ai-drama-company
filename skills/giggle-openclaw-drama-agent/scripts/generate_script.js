@@ -77,8 +77,7 @@ Shot 1（10s）
 1. 角色名："台词"
 2. 角色名："台词"
 
-【下集预告】
-（一句话预告下集内容）`;
+${epNo === total ? '【大结局】\n（用一句话总结全剧结局，给观众完整收尾，不要有下集预告）' : '【下集预告】\n（一句话预告下集内容）'}`;
 
   const text = await callLLM(prompt);
   if (!text) throw new Error(`EP${epNo} LLM returned empty`);
