@@ -673,9 +673,9 @@ function triggerScriptGeneration(projectUuid, idea, episodeCount) {
   try {
     const stalled = await listStoryProjects(db, 50);
     for (const p of stalled) {
-      if (p.status !== 'generating') continue;
+      if (!p.status || !p.status.startsWith('generating')) continue;
       const eps = await listProjectEpisodesByUuid(db, p.project_uuid);
-      if (eps.length > 0) {
+      if (eps.length >= (p.episode_count || 1)) {
         await setStoryProjectStatus(db, { projectUuid: p.project_uuid, status: 'planned' });
         continue;
       }
