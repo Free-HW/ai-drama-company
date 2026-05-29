@@ -107,14 +107,31 @@ async function generateEpisode(epNo, total, idea, prevSummaries, videoDuration) 
   };
 }
 
+// 从创意文本中解析时长（单位：秒），支持"120秒/120s/120分钟/120分钟"等格式
+function parseDurationFromIdea(idea) {
+  if (!idea) return 60;
+  const text = String(idea);
+  const m = text.match(/(\d+)\s*(秒|分钟|min|s|secs?)/i);
+  if (!m) return 60;
+  const val = parseInt(m[1]);
+  const unit = m[2];
+  const isMinute = /分钟|min/i.test(unit);
+  const seconds = isMinute ? val * 60 : val;
+  const VALID_DURATIONS = [60, 120, 180, 240, 300];
+  return VALID_DURATIONS.includes(seconds) ? seconds : 60;
+}
+
 async function main() {
   const db = openDb();
   await initSchema(db);
 
-  // 从 DB 读取每集时长（用户创建项目时设定）
+  // 从 DB 读取每集时长，如果不是有效值（或默认60而创意文本有明确时长）则从创意解析
   const VALID_DURATIONS = [60, 120, 180, 240, 300];
   const projectRow = db.prepare('SELECT video_duration FROM story_projects WHERE project_uuid=?').get(projectUuid);
-  const videoDuration = VALID_DURATIONS.includes(Number(projectRow?.video_duration)) ? Number(projectRow.video_duration) : 60;
+  const dbDuration = Number(projectRow?.video_duration) || 0;
+  // 如果 DB 值不在有效列表，或者 DB=60 但创意文本里有明确时长描述，则优先解析创意
+  const parsedFromIdea = parseDurationFromIdea(idea);
+  const videoDuration = (VALID_DURATIONS.includes(dbDuration) && dbDuration !== 60) ? dbDuration : parsedFromIdea;
 
   function log(tagClass, tagText, payload, stage) {
     console.log('[generate_script] ' + payload);

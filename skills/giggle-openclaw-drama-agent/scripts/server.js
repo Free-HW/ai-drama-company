@@ -300,7 +300,15 @@ app.post('/api/agent/projects', async (req, res) => {
     const { name, idea, language, aspect, style, episodeCount, videoDuration, bible, characters } = req.body || {};
     if (!idea || !idea.trim()) return res.status(400).json({ ok: false, error: 'idea is required' });
     const VALID_DURATIONS = [60, 120, 180, 240, 300];
-    const parsedDuration = VALID_DURATIONS.includes(Number(videoDuration)) ? Number(videoDuration) : 60;
+    // 从请求参数取，如果没有则从创意文本解析（支持"120秒/120分钟/s"格式）
+    const m = String(idea).match(/(\d+)\s*(秒|分钟|min|s|secs?)/i);
+    let parsedDuration = VALID_DURATIONS.includes(Number(videoDuration)) ? Number(videoDuration) : 60;
+    if (parsedDuration === 60 && m) {
+      const val = parseInt(m[1]);
+      const isMinute = /分钟|min/i.test(m[2]);
+      const seconds = isMinute ? val * 60 : val;
+      if (VALID_DURATIONS.includes(seconds)) parsedDuration = seconds;
+    }
     const projectUuid = randomUUID();
     await createStoryProject(db, {
       projectUuid,
