@@ -50,7 +50,8 @@ async function callLLM(prompt) {
     : '';
 }
 
-function buildPrompt(epNo, total, idea, prevSummaries) {
+function buildPrompt(epNo, total, idea, prevSummaries, videoDuration) {
+  videoDuration = videoDuration || 60;
   const isLast = epNo === total;
 
   // 已播出剧情上下文（最近5集概要）
@@ -76,7 +77,7 @@ function buildPrompt(epNo, total, idea, prevSummaries) {
     + contextBlock
     + endingNote
     + '\n\n按以下格式输出，不要有任何额外说明：\n\n'
-    + '### 第' + epNo + '集（目标：120秒）\n'
+    + '### 第' + epNo + '集（目标：' + videoDuration + '秒）\n'
     + '【剧情概要】\n（80-120字，描述本集核心剧情）\n\n'
     + '【角色表】\n角色名：角色描述（每行一个）\n\n'
     + '【Shot-by-Shot脚本·8-10镜头·每镜8-12秒】\n'
@@ -91,8 +92,8 @@ function buildPrompt(epNo, total, idea, prevSummaries) {
     + lastSection;
 }
 
-async function generateEpisode(epNo, total, idea, prevSummaries) {
-  const prompt = buildPrompt(epNo, total, idea, prevSummaries);
+async function generateEpisode(epNo, total, idea, prevSummaries, videoDuration) {
+  const prompt = buildPrompt(epNo, total, idea, prevSummaries, videoDuration);
   const text = await callLLM(prompt);
   if (!text) throw new Error('EP' + epNo + ' LLM returned empty');
 
@@ -110,12 +111,17 @@ async function main() {
   const db = openDb();
   await initSchema(db);
 
+  // 从 DB 读取每集时长（用户创建项目时设定）
+  const VALID_DURATIONS = [60, 120, 180, 240, 300];
+  const projectRow = db.prepare('SELECT video_duration FROM story_projects WHERE project_uuid=?').get(projectUuid);
+  const videoDuration = VALID_DURATIONS.includes(Number(projectRow?.video_duration)) ? Number(projectRow.video_duration) : 60;
+
   function log(tagClass, tagText, payload, stage) {
     console.log('[generate_script] ' + payload);
     writeLog(db, scriptRunId, tagClass, tagText, payload, stage);
   }
 
-  log('system', 'SYSTEM', '开始生成剧本，共 ' + total + ' 集', 'script');
+  log('system', 'SYSTEM', '开始生成剧本，共 ' + total + ' 集，每集目标 ' + videoDuration + '秒', 'script');
   setProgress(db, projectUuid, 0, total);
 
   if (scriptRunId) {
@@ -128,7 +134,7 @@ async function main() {
   for (let epNo = 1; epNo <= total; epNo++) {
     log('agent-a', 'AGENT-A', '[ScriptAgent] 正在生成 EP' + epNo + '/' + total + '...', 'script');
     try {
-      const ep = await generateEpisode(epNo, total, idea, prevSummaries);
+      const ep = await generateEpisode(epNo, total, idea, prevSummaries, videoDuration);
       upsertEpisode(db, { projectUuid: projectUuid, episode_no: ep.episode_no, title: ep.title, outline: ep.outline, script_text: ep.script_text });
       // 把本集概要加入上下文（最多保留最近5集）
       if (ep.outline) {

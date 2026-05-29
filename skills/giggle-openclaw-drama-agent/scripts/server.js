@@ -297,8 +297,10 @@ function buildLocalScriptFallback(idea, total) {
 
 app.post('/api/agent/projects', async (req, res) => {
   try {
-    const { name, idea, language, aspect, style, episodeCount, bible, characters } = req.body || {};
+    const { name, idea, language, aspect, style, episodeCount, videoDuration, bible, characters } = req.body || {};
     if (!idea || !idea.trim()) return res.status(400).json({ ok: false, error: 'idea is required' });
+    const VALID_DURATIONS = [60, 120, 180, 240, 300];
+    const parsedDuration = VALID_DURATIONS.includes(Number(videoDuration)) ? Number(videoDuration) : 60;
     const projectUuid = randomUUID();
     await createStoryProject(db, {
       projectUuid,
@@ -309,6 +311,8 @@ app.post('/api/agent/projects', async (req, res) => {
       style: style || '',
       episodeCount: Number(episodeCount || 1),
     });
+    db.prepare('UPDATE story_projects SET video_duration=?, updated_at=? WHERE project_uuid=?')
+      .run(parsedDuration, new Date().toISOString(), projectUuid);
     await upsertProjectBible(db, {
       projectUuid,
       worldSetting: bible?.worldSetting || '',

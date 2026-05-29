@@ -93,7 +93,7 @@
   /* ============= LEFT · AI TEAM ============= */
   .pane-left {
     border-right: 1px solid var(--line); padding: 28px 24px; background: var(--bg);
-    display: flex; flex-direction: column; gap: 20px;
+    display: flex; flex-direction: column; gap: 20px; overflow: hidden;
   }
   .pane-title {
     font-family: var(--mono); font-size: 10px; color: var(--text-3);
@@ -144,7 +144,7 @@
   .filter-row button:last-child { border-right: none; }
   .filter-row button.active { background: var(--gold); color: #000; }
 
-  .wall { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .wall { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
   .ep {
     background: var(--bg-1); border: 1px solid var(--line); overflow: hidden;
     position: relative; aspect-ratio: 9/14; display: flex; flex-direction: column;

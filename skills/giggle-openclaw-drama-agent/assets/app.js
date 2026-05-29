@@ -414,7 +414,9 @@
         <span>Story Projects · ${storyProjects.length}</span>
         <span class="pane-title-tag">EP MODE</span>
       </div>
-      ${cards || '<div class="agent-card idle"><div class="agent-task">暂无项目数据</div></div>'}
+      <div style="overflow-y:auto;flex:1;min-height:0;">
+        ${cards || '<div class="agent-card idle"><div class="agent-task">暂无项目数据</div></div>'}
+      </div>
     `;
 
     leftPane.querySelectorAll('.project-card').forEach((el) => {
