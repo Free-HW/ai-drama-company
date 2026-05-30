@@ -425,7 +425,7 @@ app.post('/api/agent/projects/:projectUuid/episodes/:episodeNo/run', async (req,
         const agent = new DramaAgent({
           giggle,
           pollIntervalMs: Number(process.env.POLL_INTERVAL_MS || 5000),
-          pollTimeoutMs: Number(process.env.POLL_TIMEOUT_MS || 1800000),
+          pollTimeoutMs: Number(process.env.POLL_TIMEOUT_MS || 3600000), // 默认60分钟
         });
         // 风格参数：优先用 DB 存储的（创建项目时已智能匹配），其次前端传参，最后默认值
         const styleId = project.style_id || req.body?.styleId || 146;
@@ -532,7 +532,7 @@ app.post('/api/agent/run', async (req, res) => {
       const agent = new DramaAgent({
         giggle,
         pollIntervalMs: Number(process.env.POLL_INTERVAL_MS || 5000),
-        pollTimeoutMs: Number(process.env.POLL_TIMEOUT_MS || 1800000),
+        pollTimeoutMs: Number(process.env.POLL_TIMEOUT_MS || 3600000), // 默认60分钟
       });
 
       const result = await agent.run({

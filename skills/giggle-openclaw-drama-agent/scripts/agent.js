@@ -139,7 +139,7 @@ class DramaAgent {
       isDone: (r) => (r.data?.shot_list || []).length > 0,
       isFailed: () => false,
       intervalMs: interval,
-      timeoutMs: 5 * 60 * 1000,
+      timeoutMs: 20 * 60 * 1000,
       onTick: (r) => {
         const n = (r.data?.shot_list || []).length;
         emit('agent-c', 'AGENT-C', `[StoryboardAgent] 分镜列表生成中... 当前 ${n} 条`, 'storyboard');
@@ -223,7 +223,7 @@ class DramaAgent {
       },
       isFailed: (r) => (r.data?.shot_list || []).some((s) => s.prompt_status === 'failed'),
       intervalMs: interval,
-      timeoutMs: 5 * 60 * 1000,
+      timeoutMs: 20 * 60 * 1000,
       onTick: (r) => {
         const list = r.data?.shot_list || [];
         const done = list.filter((s) => s.prompt_status === 'completed').length;
@@ -293,7 +293,7 @@ class DramaAgent {
             },
             isFailed: () => false,
             intervalMs: 5000,
-            timeoutMs: 300000,
+            timeoutMs: 20 * 60 * 1000,
             onTick: (r) => {
               const shots = (r.data?.shot_list || []).filter((s) => failedIds.has(Number(s.id)));
               const done = shots.filter((s) => s.prompt_status === 'completed').length;
