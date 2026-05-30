@@ -443,33 +443,12 @@ app.post('/api/agent/projects/:projectUuid/episodes/:episodeNo/run', async (req,
           shotDuration: req.body?.shotDuration || 5,
           db,
           storyProjectUuid: projectUuid,
+          runId,
+          episodeNo: episodeNo,
         }, emit);
 
-        const giggleProjectId = result.projectId || '';
-        if (giggleProjectId) await setProjectId(db, { runId, projectId: giggleProjectId });
+        // giggle_project_id 和角色数据已在 agent.js 各步骤完成后实时写入
         const exportUrl = result.export?.videoDownloadUrl || result.export?.videoSignedUrl || '';
-
-        const charactersStep = result.steps.find((s) => s.step === 'character.generate');
-        for (const c of charactersStep?.characterList || []) {
-          const key = String(c.name || c.id || '').trim();
-          if (!key) continue;
-          await upsertProjectCharacter(db, {
-            projectUuid,
-            characterKey: key,
-            name: c.name || key,
-            gender: c.gender || '',
-            persona: c.prompt || '',
-            visualPrompt: c.prompt || '',
-            voicePref: c.voice_id || '',
-          });
-          await upsertCharacterMapping(db, {
-            projectUuid,
-            projectCharacterKey: key,
-            giggleCharacterId: c.id || '',
-            giggleAssetId: c.asset_id || c.image_asset_id || '',
-            rawJson: c,
-          });
-        }
 
         await finishRun(db, { runId, status: 'completed', exportUrl });
         await updateProjectEpisode(db, {

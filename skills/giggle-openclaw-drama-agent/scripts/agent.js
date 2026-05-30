@@ -1,5 +1,5 @@
 const { poll } = require('./giggleClient');
-const { getGlobalCharacterByName, saveGlobalCharacter } = require('./db');
+const { getGlobalCharacterByName, saveGlobalCharacter, upsertProjectCharacter, upsertCharacterMapping, setProjectId } = require('./db');
 
 function normStatus(v) {
   return String(v || '').trim().toLowerCase();
@@ -34,6 +34,16 @@ class DramaAgent {
     if (!projectId) throw new Error('创建项目失败：未返回 project_id');
     out.projectId = projectId;
     emit('agent-a', 'AGENT-A', `[ScriptAgent] 项目已创建: ${projectId}`, 'script');
+    // 立即写入 giggle_project_id，防止后续步骤失败时丢失
+    if (input.db && input.runId) {
+      try { await setProjectId(input.db, { runId: input.runId, projectId }); } catch (_) {}
+    }
+    if (input.db && input.storyProjectUuid && input.episodeNo) {
+      try {
+        input.db.prepare('UPDATE project_episodes SET giggle_project_id=?,updated_at=? WHERE project_uuid=? AND episode_no=?')
+          .run(projectId, new Date().toISOString(), input.storyProjectUuid, input.episodeNo);
+      } catch (_) {}
+    }
 
     // ── Step 2: 扩写剧本（传入 AI 生成的完整剧本） ──
     emit('agent-a', 'AGENT-A', '[ScriptAgent] 提交剧本扩写...', 'script');
@@ -128,6 +138,31 @@ class DramaAgent {
       }
     }
 
+    // 角色生成完成后立即写入 DB
+    if (input.db && input.storyProjectUuid) {
+      for (const c of characterList) {
+        const key = String(c.name || c.id || '').trim();
+        if (!key) continue;
+        try {
+          await upsertProjectCharacter(input.db, {
+            projectUuid: input.storyProjectUuid,
+            characterKey: key,
+            name: c.name || key,
+            gender: c.gender || '',
+            persona: c.prompt || '',
+            visualPrompt: c.prompt || '',
+            voicePref: c.voice_id || '',
+          });
+          await upsertCharacterMapping(input.db, {
+            projectUuid: input.storyProjectUuid,
+            projectCharacterKey: key,
+            giggleCharacterId: c.id || '',
+            giggleAssetId: c.asset_id || c.image_asset_id || '',
+            rawJson: c,
+          });
+        } catch (_) {}
+      }
+    }
     out.steps.push({ step: 'character.generate', count: characterList.length, characterList });
     emit('agent-b', 'AGENT-B', `[CastingAgent] 角色处理完成: ${characterList.length} 个`, 'casting');
 
