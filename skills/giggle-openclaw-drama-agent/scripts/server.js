@@ -697,6 +697,11 @@ function triggerScriptGeneration(projectUuid, idea, episodeCount) {
   child.on('exit', (code) => {
     _generatingSet.delete(projectUuid);
     console.log(`[AI Script] subprocess exited code=${code} for ${projectUuid}`);
+    if (code === 0) {
+      // 剧本生成成功，直接在主进程触发全剧流水线
+      console.log(`[AI Script] triggering auto-run for ${projectUuid}`);
+      runAutoRun(projectUuid).catch(e => console.error('[AutoRun] failed:', e.message));
+    }
   });
   child.on('error', (e) => {
     _generatingSet.delete(projectUuid);
@@ -742,16 +747,13 @@ app.get('/api/agent/projects/:projectUuid/shots', async (req, res) => {
   }
 });
 
-// 全剧自动流水线：先串行跑完全部 Phase1（分镜图），再串行跑完全部 Phase2（视频+导出）
-// 全部完成后清理角色库
-app.post('/api/agent/projects/:projectUuid/auto-run', async (req, res) => {
-  const { projectUuid } = req.params;
-  try {
+// ── 全剧流水线核心函数（供 HTTP 接口和子进程回调共用）──
+async function runAutoRun(projectUuid) {
     const project = await getStoryProject(db, projectUuid);
-    if (!project) return res.status(404).json({ ok: false, error: 'project not found' });
+    if (!project) throw new Error('project not found: ' + projectUuid);
 
     const episodes = await listProjectEpisodesByUuid(db, projectUuid);
-    if (!episodes.length) return res.status(400).json({ ok: false, error: 'no episodes found' });
+    if (!episodes.length) throw new Error('no episodes found for ' + projectUuid);
 
     // 为整个流水线创建一个顶层 run（用于状态展示）
     const pipelineRunId = require('crypto').randomUUID();
@@ -902,7 +904,20 @@ app.post('/api/agent/projects/:projectUuid/auto-run', async (req, res) => {
     await finishRun(db, { runId: pipelineRunId, status: 'completed', exportUrl: '' });
     pipelineEmit('system', 'SYSTEM', `[Pipeline] 全剧流水线完成，已删除 ${deleted.length} 个角色`, 'system');
 
-    res.json({ ok: true, data: { pipelineRunId, phase1Count: episodes.length, deletedCharacters: deleted } });
+    return { pipelineRunId, phase1Count: episodes.length, deletedCharacters: deleted };
+}
+
+// HTTP 接口：触发全剧流水线（立即返回，后台异步执行）
+app.post('/api/agent/projects/:projectUuid/auto-run', async (req, res) => {
+  const { projectUuid } = req.params;
+  try {
+    const project = await getStoryProject(db, projectUuid);
+    if (!project) return res.status(404).json({ ok: false, error: 'project not found' });
+    const episodes = await listProjectEpisodesByUuid(db, projectUuid);
+    if (!episodes.length) return res.status(400).json({ ok: false, error: 'no episodes found' });
+    // 立即返回，后台异步执行
+    res.json({ ok: true, data: { projectUuid, status: 'pipeline_started' } });
+    runAutoRun(projectUuid).catch(e => console.error('[AutoRun] failed:', e.message));
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
