@@ -95,7 +95,7 @@ class DramaAgent {
     // 角色一致性处理：同名复用 story_characters 里的，新角色入库
     if (input.db && input.storyProjectUuid) {
       for (const c of characterList) {
-        const existing = getGlobalCharacterByName(input.db, c.name, input.storyProjectUuid);
+        const existing = await getGlobalCharacterByName(input.db, c.name, input.storyProjectUuid);
         if (existing && existing.library_character_id) {
           // 同名角色：复用已有
           emit('agent-b', 'AGENT-B', `[CastingAgent] 复用已有角色: ${c.name} library_character_id=${existing.library_character_id}`, 'casting');
@@ -120,7 +120,7 @@ class DramaAgent {
             const libData = Array.isArray(uploadResp?.data) ? uploadResp.data[0] : uploadResp?.data;
             const libCharId = libData?.parent_id || libData?.id || 0;
             emit('agent-b', 'AGENT-B', `[CastingAgent] 角色入库成功: ${c.name} library_character_id=${libCharId}`, 'casting');
-            saveGlobalCharacter(input.db, {
+            await saveGlobalCharacter(input.db, {
               storyProjectUuid: input.storyProjectUuid,
               name: c.name,
               gender: c.gender || '',
@@ -136,7 +136,7 @@ class DramaAgent {
         const key = String(c.name || c.id || '').trim();
         if (!key) continue;
         try {
-          upsertProjectCharacter(input.db, {
+          await upsertProjectCharacter(input.db, {
             projectUuid: input.storyProjectUuid,
             characterKey: key,
             name: c.name || key,
@@ -145,7 +145,7 @@ class DramaAgent {
             visualPrompt: c.prompt || '',
             voicePref: c.voice_id || '',
           });
-          upsertCharacterMapping(input.db, {
+          await upsertCharacterMapping(input.db, {
             projectUuid: input.storyProjectUuid,
             projectCharacterKey: key,
             giggleCharacterId: c.id || '',

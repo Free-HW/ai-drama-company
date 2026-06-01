@@ -260,16 +260,13 @@ async function listCharacterMappings(db, projectUuid) {
  */
 function getGlobalCharacterByName(db, name, storyProjectUuid) {
   if (storyProjectUuid) {
-    return get(db,
-      'SELECT name, gender, library_character_id, giggle_asset_id FROM story_characters WHERE story_project_uuid=? AND name=? LIMIT 1',
-      [storyProjectUuid, name]
-    );
+    return db.prepare(
+      'SELECT name, gender, library_character_id, giggle_asset_id FROM story_characters WHERE story_project_uuid=? AND name=? LIMIT 1'
+    ).get(storyProjectUuid, name) || null;
   }
-  // 兜底：不限项目（向后兼容）
-  return get(db,
-    'SELECT name, gender, library_character_id, giggle_asset_id FROM story_characters WHERE name=? ORDER BY id DESC LIMIT 1',
-    [name]
-  );
+  return db.prepare(
+    'SELECT name, gender, library_character_id, giggle_asset_id FROM story_characters WHERE name=? ORDER BY id DESC LIMIT 1'
+  ).get(name) || null;
 }
 
 /**
