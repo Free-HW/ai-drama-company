@@ -401,12 +401,30 @@
     if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
     activeRunId = null;
 
+    // 页面刷新恢复时，先获取各集当前最新日志 ID，避免重复显示历史日志
+    let initialized = false;
+
     const loopTimer = setInterval(async () => {
       try {
         const resp = await fetch(`/api/agent/projects/${projectUuid}`);
         const json = await resp.json().catch(() => ({}));
         const eps = json.data?.episodes || [];
         const pStatus = json.data?.project?.status || '';
+
+        // 首次轮询：初始化各集 lastLogId 为当前最新，不重放历史日志
+        if (!initialized) {
+          initialized = true;
+          for (const ep of eps) {
+            if (!ep.run_id) continue;
+            const r = await fetch(`/api/agent/status/${ep.run_id}?since_id=0`);
+            const j = await r.json().catch(() => ({}));
+            const logs = j.logs || [];
+            if (logs.length) {
+              epLastLogId[ep.run_id] = Number(logs[logs.length-1].id || 0);
+            }
+          }
+          appendLine('system', 'SYSTEM', '[恢复] 已跳过历史日志，从当前进度继续显示', 'system');
+        }
 
         // 刷新剧集列表
         if (selectedStoryProjectUuid === projectUuid) {
