@@ -6,7 +6,7 @@
     .oclaw-input { flex: 1; min-width: 320px; background: #0c0c10; color: var(--text); border: 1px solid var(--line-2); padding: 10px 12px; font-family: var(--sans); }
     .oclaw-btn { background: var(--gold); color: #000; border: none; padding: 10px 14px; font-family: var(--mono); font-size: 12px; cursor: pointer; }
     .oclaw-btn:disabled { opacity: .5; cursor: not-allowed; }
-    .oclaw-db { margin-top: 10px; border: 1px dashed var(--line-2); padding: 10px; font-family: var(--mono); font-size: 11px; color: var(--text-2); }
+    .oclaw-db { display: none; }
     .project-card.active { border-color: var(--gold)!important; }
     .x2c-dynamic { border:1px solid var(--line); background:var(--bg-1); padding:12px; margin-bottom:12px; font-family:var(--mono); font-size:12px; color:var(--text-2); }
     .x2c-modal-grid { display:grid; grid-template-columns: 1.2fr .8fr; gap:14px; }
