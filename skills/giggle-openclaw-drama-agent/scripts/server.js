@@ -299,62 +299,33 @@ function buildLocalScriptFallback(idea, total) {
 
 // 用 AI 从 idea 中智能提取项目名称
 /**
- * 从 idea 中提取项目名称（本地规则，快速可靠）
- * 策略：提取主题关键词 + 情节关键词组合
+ * 调用 Gateway LLM 智能生成项目名称（60秒超时）
  */
-function aiGenerateProjectName(idea) {
-  const str = String(idea).trim();
-
-  // 1. 直接包含书名号或引号的标题，直接用
-  const quoted = str.match(/[《"']([^》"']{2,12})[》"']/);
-  if (quoted) return quoted[1];
-
-  // 2. 提取主角词
-  const subjectMap = [
-    [/小猫|猫咪|喵星人/, '喵星'],
-    [/小狗|狗狗|汪星人/, '汪星'],
-    [/婴儿|宝宝/, '宝贝'],
-    [/霸总|总裁|CEO/, '霸总'],
-    [/皇帝|皇上|天子/, '帝王'],
-    [/太子|王爷|将军|王侯/, '王侯'],
-    [/重生|穿越/, '重生'],
-    [/女主|女孩|少女|姑娘/, '她'],
-    [/男主|男孩|少年|小伙/, '他'],
-  ];
-  // 3. 提取情节词
-  const plotMap = [
-    [/流浪|迷路/, '寻家'],
-    [/复仇|报仇/, '复仇'],
-    [/契约|婚姻|婚约/, '契约'],
-    [/逆袭|崛起/, '逆袭'],
-    [/甜宠|宠文/, '甜宠'],
-    [/回家|寻家|找到家/, '归途'],
-    [/城市|都市/, '都市'],
-    [/爱情|恋爱/, '情深'],
-    [/冒险|探索/, '冒险'],
-  ];
-
-  let subject = '';
-  let plot = '';
-  for (const [re, label] of subjectMap) {
-    if (re.test(str)) { subject = label; break; }
+async function aiGenerateProjectName(idea) {
+  try {
+    const GATEWAY = process.env.OPENCLAW_GATEWAY_URL || 'http://localhost:18789';
+    const PASS = process.env.OPENCLAW_GATEWAY_PASSWORD || '';
+    const resp = await fetch(`${GATEWAY}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(PASS ? { Authorization: `Bearer ${PASS}` } : {}) },
+      body: JSON.stringify({
+        model: 'openclaw',
+        max_tokens: 30,
+        messages: [
+          { role: 'system', content: '你是一个短剧命名专家。根据用户描述，提炼出一个简洁有力的短剧名称，4-10个字，不加书名号，不加标点，只输出名称本身。' },
+          { role: 'user', content: idea },
+        ],
+      }),
+      signal: AbortSignal.timeout(60000),
+    });
+    const data = await resp.json();
+    const name = (data.choices?.[0]?.message?.content || '').trim().replace(/[《》「」【】""''\n]/g, '');
+    if (name) { console.log('[AIName] generated:', name); return name; }
+    return null;
+  } catch (e) {
+    console.warn('[AIName] failed:', e.message);
+    return null;
   }
-  for (const [re, label] of plotMap) {
-    if (re.test(str)) { plot = label; break; }
-  }
-
-  if (subject && plot) return subject + plot;
-  if (subject) return subject + '的故事';
-  if (plot) return plot + '之路';
-
-  // 4. 取 idea 前8个汉字作为名称（去掉常见前缀词）
-  const cleaned = str
-    .replace(/^(生成|制作|我想|请帮我|帮我|写一个|创作|一集|一个|短视频|短剧)[，,。\s]*/g, '')
-    .replace(/[，。！？,.!?\s]/g, '');
-  const cjk = cleaned.match(/[一-龥]{2,8}/);
-  if (cjk) return cjk[0].slice(0, 8);
-
-  return null;
 }
 
 // 集数配置
@@ -395,13 +366,13 @@ app.post('/api/agent/projects', async (req, res) => {
     // 解析集数：前端传则用，否则从 idea 解析，默认 10 集
     const finalEpisodeCount = episodeCount ? Math.min(Math.max(Number(episodeCount), 1), EPISODE_COUNT_MAX)
                                             : parseEpisodeCountFromIdea(idea);
-    // 项目名：用户输入优先，否则 AI 智能命名
-    const finalName = (name && name.trim()) ? name.trim()
-                                            : (await aiGenerateProjectName(idea.trim())) || `短剧项目-${new Date().toISOString().slice(0, 10)}`;
+    // 项目名：用户输入优先，否则先用临时名，后台 AI 异步命名
+    const userInputName = (name && name.trim()) ? name.trim() : '';
+    const tempName = userInputName || `生成中-${new Date().toISOString().slice(0, 10)}`;
     const projectUuid = randomUUID();
     await createStoryProject(db, {
       projectUuid,
-      name: finalName,
+      name: tempName,
       idea: idea.trim(),
       language: language || 'zh-CN',
       aspect: aspect || '16:9',
@@ -410,7 +381,6 @@ app.post('/api/agent/projects', async (req, res) => {
       styleId: 146,
       videoDuration: parsedDuration,
     });
-    // 移除旧的单独 UPDATE video_duration（已合并到 createStoryProject）
     await upsertProjectBible(db, {
       projectUuid,
       worldSetting: bible?.worldSetting || '',
@@ -425,13 +395,29 @@ app.post('/api/agent/projects', async (req, res) => {
     const project0 = await getStoryProject(db, projectUuid);
     res.json({ ok: true, data: { project: project0, episodes: [], generating: true } });
 
-    // 异步：matchStyleId 和 triggerScriptGeneration 并行，互不阻塞
+    // 异步：AI命名 + 风格匹配 + 剧本生成 并行执行
     (async () => {
-      // 立即写一条日志，前端控制台马上有反馈
-      const initRunId = db.prepare('SELECT script_run_id FROM story_projects WHERE project_uuid=?').get(projectUuid)?.script_run_id;
-      // 先触发剧本生成（不等风格匹配），让前端立刻看到进度
+      // 先触发剧本生成，让前端立刻看到进度
       triggerScriptGeneration(projectUuid, idea.trim(), finalEpisodeCount);
-      // 并行匹配风格，完成后更新 DB
+
+      // AI 命名（如果用户没有输入名称）
+      if (!userInputName) {
+        const scriptRunId = db.prepare('SELECT script_run_id FROM story_projects WHERE project_uuid=?').get(projectUuid)?.script_run_id;
+        // 写一条日志提示正在命名
+        if (scriptRunId) addLog(db, { runId: scriptRunId, stage: 'system', tagClass: 'system', tagText: 'SYSTEM', payload: '[AIName] 正在分析内容，AI 智能命名中...' }).catch(() => {});
+        aiGenerateProjectName(idea.trim()).then(aiName => {
+          if (aiName) {
+            db.prepare('UPDATE story_projects SET name=?, updated_at=? WHERE project_uuid=?')
+              .run(aiName, new Date().toISOString(), projectUuid);
+            console.log('[AIName] updated project name to:', aiName);
+            // 写日志通知前端
+            const runId2 = db.prepare('SELECT script_run_id FROM story_projects WHERE project_uuid=?').get(projectUuid)?.script_run_id;
+            if (runId2) addLog(db, { runId: runId2, stage: 'system', tagClass: 'system', tagText: 'SYSTEM', payload: `[AIName] 项目命名完成：${aiName}` }).catch(() => {});
+          }
+        }).catch(e => console.warn('[AIName] async failed:', e.message));
+      }
+
+      // 并行匹配风格
       matchStyleId(idea.trim()).then(styleId => {
         db.prepare('UPDATE story_projects SET style_id=?, updated_at=? WHERE project_uuid=?')
           .run(styleId, new Date().toISOString(), projectUuid);
