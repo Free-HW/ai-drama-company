@@ -348,45 +348,81 @@
     return 'RUNNING';
   }
 
+  // 单集轮询：持续拉取 runId 日志直到完成/失败，返回最终状态
   async function pollRunStatus(runId, tip, runBtn) {
     activeRunId = runId;
     lastLogId = 0;
     if (pollTimer) clearInterval(pollTimer);
-    pollTimer = setInterval(async () => {
-      if (!activeRunId) return;
-      try {
-        const sResp = await fetch(`/api/agent/status/${activeRunId}?since_id=${lastLogId}`);
-        const sJson = await sResp.json().catch(() => ({}));
-        if (!sResp.ok || !sJson.ok) throw new Error(sJson.error || 'status query failed');
-
-        const newLogs = sJson.logs || [];
-        newLogs.forEach((l) => {
-          appendLine(l.tagClass, l.tagText, l.payload, l.stage);
-          lastLogId = Math.max(lastLogId, Number(l.id || 0));
-        });
-        // 每次有新日志就刷新剧集列表（逐集显示）
-        if (newLogs.length > 0 && selectedStoryProjectUuid) {
-          renderStoryEpisodes(selectedStoryProjectUuid).catch(() => {});
-        }
-
-        if (sJson.run?.status === 'completed' || sJson.run?.status === 'failed') {
-          if (tip) tip.textContent = sJson.run.status === 'completed' ? '当前分集执行完成。' : '当前分集执行失败，请看日志。';
-          clearInterval(pollTimer);
-          pollTimer = null;
-          activeRunId = null;
+    return new Promise((resolve) => {
+      pollTimer = setInterval(async () => {
+        if (!activeRunId) { clearInterval(pollTimer); pollTimer = null; resolve('stopped'); return; }
+        try {
+          const sResp = await fetch(`/api/agent/status/${activeRunId}?since_id=${lastLogId}`);
+          const sJson = await sResp.json().catch(() => ({}));
+          if (!sResp.ok || !sJson.ok) throw new Error(sJson.error || 'status query failed');
+          const newLogs = sJson.logs || [];
+          newLogs.forEach((l) => {
+            appendLine(l.tagClass, l.tagText, l.payload, l.stage);
+            lastLogId = Math.max(lastLogId, Number(l.id || 0));
+          });
+          if (newLogs.length > 0 && selectedStoryProjectUuid) {
+            renderStoryEpisodes(selectedStoryProjectUuid).catch(() => {});
+          }
+          const runStatus = sJson.run?.status;
+          if (runStatus === 'completed' || runStatus === 'failed') {
+            clearInterval(pollTimer); pollTimer = null; activeRunId = null;
+            if (runBtn) runBtn.disabled = false;
+            _pollLines.clear();
+            await refreshStoryWorkspace();
+            resolve(runStatus);
+          }
+        } catch (e) {
+          appendLine('system', 'SYSTEM', `状态轮询失败: ${e.message}`, 'distribute');
+          clearInterval(pollTimer); pollTimer = null; activeRunId = null;
           if (runBtn) runBtn.disabled = false;
-          _pollLines.clear();
-          await refreshStoryWorkspace();
+          resolve('error');
         }
-      } catch (e) {
-        appendLine('system', 'SYSTEM', `状态轮询失败: ${e.message}`, 'distribute');
-        if (tip) tip.textContent = '状态同步失败，请检查服务日志。';
-        clearInterval(pollTimer);
-        pollTimer = null;
-        activeRunId = null;
-        if (runBtn) runBtn.disabled = false;
+      }, 1500);
+    });
+  }
+
+  // 全剧流水线轮询：按集序跟随所有集的日志
+  async function pollPipeline(projectUuid) {
+    const tip = document.getElementById('oclawTip');
+    let phase = 'phase1';
+    // 持续轮询，直到全部集完成/失败
+    while (true) {
+      const resp = await fetch(`/api/agent/projects/${projectUuid}`);
+      const json = await resp.json().catch(() => ({}));
+      const eps = json.data?.episodes || [];
+      const project = json.data?.project || {};
+      const pStatus = project.status;
+
+      // 找当前正在 running 的集（按集号顺序）
+      const runningEp = eps.find(e => e.status === 'running' && e.run_id);
+      if (runningEp) {
+        if (tip) tip.textContent = `EP${runningEp.episode_no} 制作中...`;
+        appendLine('system', 'SYSTEM', `━━ EP${runningEp.episode_no} 开始 ━━`, 'system');
+        await pollRunStatus(runningEp.run_id, tip, null);
+        // 本集完成后继续循环
+        continue;
       }
-    }, 1500);
+
+      // 没有 running 的集，检查整体状态
+      if (pStatus === 'completed' || pStatus === 'partial_failed' || pStatus === 'failed') {
+        if (tip) tip.textContent = pStatus === 'completed' ? '全剧制作完成！' : '全剧制作结束（部分集失败）';
+        appendLine('system', 'SYSTEM', `━━ 全剧流水线结束 状态:${pStatus} ━━`, 'system');
+        await renderStoryEpisodes(projectUuid);
+        break;
+      }
+
+      // 还有 planned 状态的集（等待 Phase2 开始）
+      const hasPlanned = eps.some(e => e.status === 'planned' || e.status === 'running');
+      if (!hasPlanned && pStatus !== 'running') break;
+
+      // 等一会儿再轮询
+      await new Promise(r => setTimeout(r, 3000));
+    }
   }
 
   function renderStoryProjects() {
@@ -540,9 +576,14 @@
       }
       if (termLog) termLog.innerHTML = '';
       lastLogId = 0;
-      // 若 scriptRunId 还没有日志，先显示一条初始提示
       appendLine('system', 'SYSTEM', '正在匹配风格、准备生成剧本，请稍候...', 'script');
+      // 等剧本生成完成，然后自动切换到全剧流水线轮询
       await pollRunStatus(scriptRunId, tip, null);
+      // 剧本完成后，自动跟踪后续流水线进度
+      if (selectedStoryProjectUuid) {
+        appendLine('system', 'SYSTEM', '━━ 剧本生成完成，自动跟踪视频制作进度 ━━', 'system');
+        pollPipeline(selectedStoryProjectUuid);
+      }
     }
 
     eps.forEach((ep) => {
@@ -562,16 +603,19 @@
           const resp = await fetch(`/api/agent/projects/${p.project_uuid}`);
           if (!resp.ok) continue;
           const json = await resp.json();
-          const running = (json.data?.episodes || []).find(e => e.status === 'running' && e.run_id);
-          if (running) {
+          const eps = json.data?.episodes || [];
+          const pStatus = json.data?.project?.status || '';
+          // 有集在 running 或项目在 running/generating 状态，启动全剧流水线轮询
+          const hasRunning = eps.some(e => e.status === 'running' && e.run_id);
+          const isActive = hasRunning || pStatus === 'running' || pStatus === 'generating' || pStatus.startsWith('generating:');
+          if (isActive) {
             selectedStoryProjectUuid = p.project_uuid;
             renderStoryProjects();
             await renderStoryEpisodes(p.project_uuid);
             const tip = document.getElementById('oclawTip');
-            if (tip) tip.textContent = `检测到 EP${running.episode_no} 正在执行，已自动恢复轮询...`;
-            appendLine('system', 'SYSTEM', `[恢复] EP${running.episode_no} 任务进行中，run_id: ${running.run_id}`, 'script');
-            const runBtn = document.getElementById(`run-ep-${running.episode_no}`);
-            pollRunStatus(running.run_id, tip, runBtn);
+            if (tip) tip.textContent = '检测到任务进行中，已自动恢复轮询...';
+            appendLine('system', 'SYSTEM', '[恢复] 检测到流水线进行中，自动跟踪进度', 'system');
+            pollPipeline(p.project_uuid);
             return;
           }
         } catch (_) { continue; }

@@ -80,9 +80,9 @@ class DramaAgent {
       fn: () => this.giggle.listCharacters(projectId),
       isDone: (r) => {
         const list = r.data?.character_list || [];
-        return list.length > 0 && list.every((x) => isDone(x.generating_status));
+        return list.length > 0 && list.every((x) => isDone(x.generating_status) || isFailed(x.generating_status));
       },
-      isFailed: (r) => (r.data?.character_list || []).some((x) => isFailed(x.generating_status)),
+      isFailed: () => false, // 单个角色失败不整体失败
       intervalMs: interval,
       timeoutMs: timeout,
       onTick: (r) => {
@@ -181,12 +181,20 @@ class DramaAgent {
         const list = r.data?.shot_list || [];
         return list.length > 0 && list.every((x) => isDone(x.generating_status));
       },
-      isFailed: (r) => (r.data?.shot_list || []).some((x) => isFailed(x.generating_status)),
+      // 不整体失败，等全部完成（含失败）后在下面重试
+      isFailed: () => false,
       intervalMs: interval,
       timeoutMs: timeout,
       onTick: (r) => {
         const list = r.data?.shot_list || [];
-        emit('agent-c', 'AGENT-C', `[StoryboardAgent] 分镜图生成中 ${list.filter((x) => isDone(x.generating_status)).length}/${list.length}`, 'storyboard');
+        const done = list.filter((x) => isDone(x.generating_status)).length;
+        const failed = list.filter((x) => isFailed(x.generating_status)).length;
+        emit('agent-c', 'AGENT-C', `[StoryboardAgent] 分镜图生成中 ${done}/${list.length}${failed ? ' (' + failed + ' 失败待重试)' : ''}`, 'storyboard');
+      },
+      // isDone 改为：所有分镜都到终态（完成或失败）才退出轮询
+      isDone: (r) => {
+        const list = r.data?.shot_list || [];
+        return list.length > 0 && list.every((x) => isDone(x.generating_status) || isFailed(x.generating_status));
       },
     });
     let shots = shotsDone.data?.shot_list || [];
