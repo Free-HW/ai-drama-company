@@ -80,7 +80,9 @@ class DramaAgent {
       fn: () => this.giggle.listCharacters(projectId),
       isDone: (r) => {
         const list = r.data?.character_list || [];
-        return list.length > 0 && list.every((x) => isDone(x.generating_status) || isFailed(x.generating_status));
+        // 角色数为 0 也视为完成（无角色内容合法，如动物/风景类短剧）
+        if (list.length === 0) return true;
+        return list.every((x) => isDone(x.generating_status) || isFailed(x.generating_status));
       },
       isFailed: () => false, // 单个角色失败不整体失败
       intervalMs: interval,

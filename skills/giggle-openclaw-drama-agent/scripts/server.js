@@ -306,7 +306,7 @@ async function aiGenerateProjectName(idea) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...(PASS ? { Authorization: `Bearer ${PASS}` } : {}) },
       body: JSON.stringify({
-        model: 'default',
+        model: 'openclaw',
         max_tokens: 30,
         messages: [
           { role: 'system', content: '你是一个短剧命名专家。根据用户描述，提炼出一个简洁有力的短剧名称，4-10个汉字，不加书名号，不加标点，只输出名称本身。' },
