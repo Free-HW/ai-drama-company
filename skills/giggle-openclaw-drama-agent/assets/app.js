@@ -386,43 +386,90 @@
     });
   }
 
-  // 全剧流水线轮询：按集序跟随所有集的日志
+  // 全剧流水线轮询：持续跟踪所有集的日志，自动切换
   async function pollPipeline(projectUuid) {
     const tip = document.getElementById('oclawTip');
-    let phase = 'phase1';
-    // 持续轮询，直到全部集完成/失败
-    while (true) {
-      const resp = await fetch(`/api/agent/projects/${projectUuid}`);
-      const json = await resp.json().catch(() => ({}));
-      const eps = json.data?.episodes || [];
-      const project = json.data?.project || {};
-      const pStatus = project.status;
+    let trackingRunId = null;   // 当前正在显示日志的 run_id
+    let trackingEpNo = null;    // 当前显示的集号
+    let epLastLogId = {};       // 每集独立的 lastLogId
+    let consecutiveIdle = 0;    // 连续没有活跃集的次数
 
-      // 找当前正在 running 的集（按集号顺序）
-      const runningEp = eps.find(e => e.status === 'running' && e.run_id);
-      if (runningEp) {
-        if (tip) tip.textContent = `EP${runningEp.episode_no} 制作中...`;
-        appendLine('system', 'SYSTEM', `━━ EP${runningEp.episode_no} 开始 ━━`, 'system');
-        await pollRunStatus(runningEp.run_id, tip, null);
-        // 本集完成后继续循环
-        continue;
+    const TERMINAL_STATUSES = new Set(['completed','failed','partial_failed']);
+    const ACTIVE_STATUSES = new Set(['running']);
+
+    // 停止当前 pollRunStatus 轮询
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    activeRunId = null;
+
+    const loopTimer = setInterval(async () => {
+      try {
+        const resp = await fetch(`/api/agent/projects/${projectUuid}`);
+        const json = await resp.json().catch(() => ({}));
+        const eps = json.data?.episodes || [];
+        const pStatus = json.data?.project?.status || '';
+
+        // 刷新剧集列表
+        if (selectedStoryProjectUuid === projectUuid) {
+          renderStoryEpisodes(projectUuid).catch(() => {});
+        }
+
+        // 找当前 running 的集（按集号最小优先）
+        const runningEp = eps.filter(e => ACTIVE_STATUSES.has(e.status) && e.run_id)
+                             .sort((a,b) => a.episode_no - b.episode_no)[0];
+
+        if (runningEp) {
+          consecutiveIdle = 0;
+          const epNo = runningEp.episode_no;
+          const runId = runningEp.run_id;
+
+          // 切换到新集时打分隔线
+          if (trackingEpNo !== epNo) {
+            trackingEpNo = epNo;
+            trackingRunId = runId;
+            epLastLogId[runId] = epLastLogId[runId] || 0;
+            if (tip) tip.textContent = `EP${epNo} 制作中...`;
+            appendLine('system', 'SYSTEM', `━━━ EP${epNo} 开始制作 ━━━`, 'system');
+          }
+
+          // 拉取该集的增量日志
+          const since = epLastLogId[runId] || 0;
+          const sResp = await fetch(`/api/agent/status/${runId}?since_id=${since}`);
+          const sJson = await sResp.json().catch(() => ({}));
+          if (sJson.ok) {
+            (sJson.logs || []).forEach(l => {
+              appendLine(l.tagClass, l.tagText, l.payload, l.stage);
+              epLastLogId[runId] = Math.max(epLastLogId[runId] || 0, Number(l.id || 0));
+            });
+          }
+        } else {
+          // 没有 running 集：检查是否有 phase1_done 在等 Phase2
+          const hasPhase1Done = eps.some(e => e.status === 'phase1_done');
+          const hasRunning = eps.some(e => e.status === 'running');
+
+          if (hasPhase1Done && !hasRunning) {
+            if (tip) tip.textContent = 'Phase 1 完成，等待 Phase 2 开始...';
+            consecutiveIdle++;
+          } else {
+            consecutiveIdle++;
+          }
+
+          // 项目最终完成
+          if (TERMINAL_STATUSES.has(pStatus)) {
+            clearInterval(loopTimer);
+            const ok = pStatus === 'completed';
+            if (tip) tip.textContent = ok ? '🎉 全剧制作完成！' : '全剧制作结束（部分集失败）';
+            appendLine('system', 'SYSTEM', `━━━ 全剧流水线结束 [${pStatus}] ━━━`, 'system');
+            await renderStoryEpisodes(projectUuid);
+            await refreshStoryWorkspace();
+          }
+        }
+      } catch(e) {
+        // 忽略单次轮询错误，继续
       }
+    }, 2000);
 
-      // 没有 running 的集，检查整体状态
-      if (pStatus === 'completed' || pStatus === 'partial_failed' || pStatus === 'failed') {
-        if (tip) tip.textContent = pStatus === 'completed' ? '全剧制作完成！' : '全剧制作结束（部分集失败）';
-        appendLine('system', 'SYSTEM', `━━ 全剧流水线结束 状态:${pStatus} ━━`, 'system');
-        await renderStoryEpisodes(projectUuid);
-        break;
-      }
-
-      // 还有 planned 状态的集（等待 Phase2 开始）
-      const hasPlanned = eps.some(e => e.status === 'planned' || e.status === 'running');
-      if (!hasPlanned && pStatus !== 'running') break;
-
-      // 等一会儿再轮询
-      await new Promise(r => setTimeout(r, 3000));
-    }
+    // 暴露给外部用于停止
+    window._pipelineLoopTimer = loopTimer;
   }
 
   function renderStoryProjects() {
@@ -582,6 +629,7 @@
       // 剧本完成后，自动跟踪后续流水线进度
       if (selectedStoryProjectUuid) {
         appendLine('system', 'SYSTEM', '━━ 剧本生成完成，自动跟踪视频制作进度 ━━', 'system');
+        if (window._pipelineLoopTimer) { clearInterval(window._pipelineLoopTimer); window._pipelineLoopTimer = null; }
         pollPipeline(selectedStoryProjectUuid);
       }
     }
@@ -597,7 +645,11 @@
   // 页面加载时自动恢复轮询（检测 running 状态的集数）
   async function autoResumePolling() {
     try {
-      if (activeRunId || pollTimer) return;
+      // 停止已有的流水线轮询
+      if (window._pipelineLoopTimer) { clearInterval(window._pipelineLoopTimer); window._pipelineLoopTimer = null; }
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+      activeRunId = null;
+
       for (const p of storyProjects) {
         try {
           const resp = await fetch(`/api/agent/projects/${p.project_uuid}`);
@@ -605,9 +657,9 @@
           const json = await resp.json();
           const eps = json.data?.episodes || [];
           const pStatus = json.data?.project?.status || '';
-          // 有集在 running 或项目在 running/generating 状态，启动全剧流水线轮询
-          const hasRunning = eps.some(e => e.status === 'running' && e.run_id);
-          const isActive = hasRunning || pStatus === 'running' || pStatus === 'generating' || pStatus.startsWith('generating:');
+          // 有集在 running/phase1_done 或项目在 running/generating 状态，启动全剧流水线轮询
+          const hasActive = eps.some(e => ['running','phase1_done'].includes(e.status) && e.run_id);
+          const isActive = hasActive || pStatus === 'running' || pStatus === 'generating' || pStatus.startsWith('generating:');
           if (isActive) {
             selectedStoryProjectUuid = p.project_uuid;
             renderStoryProjects();

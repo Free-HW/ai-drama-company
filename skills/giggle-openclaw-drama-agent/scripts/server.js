@@ -819,9 +819,15 @@ async function runAutoRun(projectUuid) {
           runId,
           episodeNo: ep.episode_no,
         }, emit);
-        pipelineEmit('system', 'SYSTEM', `[Pipeline] EP${ep.episode_no} Phase 1 完成（giggle_project_id=${phase1Result.projectId}）`, 'system');
+        // Phase1 完成：标记集状态为 phase1_done，方便前端区分阶段
+        db.prepare('UPDATE project_episodes SET status=?,updated_at=? WHERE project_uuid=? AND episode_no=?')
+          .run('phase1_done', new Date().toISOString(), projectUuid, ep.episode_no);
+        db.prepare('UPDATE runs SET status=?,updated_at=? WHERE run_id=?')
+          .run('phase1_done', new Date().toISOString(), runId);
+        pipelineEmit('system', 'SYSTEM', `[Pipeline] EP${ep.episode_no} Phase 1 完成`, 'system');
       } catch (e) {
         pipelineEmit('system', 'SYSTEM', `[Pipeline] EP${ep.episode_no} Phase 1 失败: ${e.message}`, 'system');
+        await finishRun(db, { runId, status: 'failed', exportUrl: '' });
         await updateProjectEpisode(db, { projectUuid, episodeNo: ep.episode_no, status: 'failed', runId });
       }
     }
@@ -836,6 +842,13 @@ async function runAutoRun(projectUuid) {
       // 从最新 DB 读取 Phase1 写入的 runId 和 giggle_project_id
       const runId = ep.run_id;
       const giggleProjectId = ep.giggle_project_id;
+      // Phase2 开始：把 episode 和 run 状态改回 running，前端重新触发轮询
+      if (runId) {
+        db.prepare('UPDATE project_episodes SET status=?,updated_at=? WHERE project_uuid=? AND episode_no=?')
+          .run('running', new Date().toISOString(), projectUuid, ep.episode_no);
+        db.prepare('UPDATE runs SET status=?,updated_at=? WHERE run_id=?')
+          .run('running', new Date().toISOString(), runId);
+      }
       if (!runId || !giggleProjectId) {
         pipelineEmit('system', 'SYSTEM', `[Pipeline] EP${ep.episode_no} 缺少 runId 或 giggle_project_id，跳过`, 'system');
         continue;
