@@ -298,31 +298,63 @@ function buildLocalScriptFallback(idea, total) {
 
 
 // 用 AI 从 idea 中智能提取项目名称
-async function aiGenerateProjectName(idea) {
-  try {
-    const GATEWAY = process.env.OPENCLAW_GATEWAY_URL || 'http://localhost:18789';
-    const PASS = process.env.OPENCLAW_GATEWAY_PASSWORD || '';
-    const resp = await fetch(`${GATEWAY}/v1/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(PASS ? { Authorization: `Bearer ${PASS}` } : {}) },
-      body: JSON.stringify({
-        model: 'openclaw',
-        max_tokens: 30,
-        messages: [
-          { role: 'system', content: '你是一个短剧命名专家。根据用户描述，提炼出一个简洁有力的短剧名称，4-10个汉字，不加书名号，不加标点，只输出名称本身。' },
-          { role: 'user', content: idea },
-        ],
-      }),
-      signal: AbortSignal.timeout(15000),
-    });
-    const data = await resp.json();
-    const name = (data.choices?.[0]?.message?.content || '').trim().replace(/[《》「」【】""''\n]/g, '');
-    console.log('[AIName] generated:', name);
-    return name || null;
-  } catch (e) {
-    console.warn('[AIName] failed:', e.message);
-    return null;
+/**
+ * 从 idea 中提取项目名称（本地规则，快速可靠）
+ * 策略：提取主题关键词 + 情节关键词组合
+ */
+function aiGenerateProjectName(idea) {
+  const str = String(idea).trim();
+
+  // 1. 直接包含书名号或引号的标题，直接用
+  const quoted = str.match(/[《"']([^》"']{2,12})[》"']/);
+  if (quoted) return quoted[1];
+
+  // 2. 提取主角词
+  const subjectMap = [
+    [/小猫|猫咪|喵星人/, '喵星'],
+    [/小狗|狗狗|汪星人/, '汪星'],
+    [/婴儿|宝宝/, '宝贝'],
+    [/霸总|总裁|CEO/, '霸总'],
+    [/皇帝|皇上|天子/, '帝王'],
+    [/太子|王爷|将军|王侯/, '王侯'],
+    [/重生|穿越/, '重生'],
+    [/女主|女孩|少女|姑娘/, '她'],
+    [/男主|男孩|少年|小伙/, '他'],
+  ];
+  // 3. 提取情节词
+  const plotMap = [
+    [/流浪|迷路/, '寻家'],
+    [/复仇|报仇/, '复仇'],
+    [/契约|婚姻|婚约/, '契约'],
+    [/逆袭|崛起/, '逆袭'],
+    [/甜宠|宠文/, '甜宠'],
+    [/回家|寻家|找到家/, '归途'],
+    [/城市|都市/, '都市'],
+    [/爱情|恋爱/, '情深'],
+    [/冒险|探索/, '冒险'],
+  ];
+
+  let subject = '';
+  let plot = '';
+  for (const [re, label] of subjectMap) {
+    if (re.test(str)) { subject = label; break; }
   }
+  for (const [re, label] of plotMap) {
+    if (re.test(str)) { plot = label; break; }
+  }
+
+  if (subject && plot) return subject + plot;
+  if (subject) return subject + '的故事';
+  if (plot) return plot + '之路';
+
+  // 4. 取 idea 前8个汉字作为名称（去掉常见前缀词）
+  const cleaned = str
+    .replace(/^(生成|制作|我想|请帮我|帮我|写一个|创作|一集|一个|短视频|短剧)[，,。\s]*/g, '')
+    .replace(/[，。！？,.!?\s]/g, '');
+  const cjk = cleaned.match(/[一-龥]{2,8}/);
+  if (cjk) return cjk[0].slice(0, 8);
+
+  return null;
 }
 
 // 集数配置
