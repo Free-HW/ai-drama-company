@@ -264,15 +264,7 @@
   let selectedStoryProjectUuid = null;
 
   function setStage(stage) {
-    const stages = ['script', 'casting', 'storyboard', 'render', 'distribute'];
-    document.querySelectorAll('.pipeline-step').forEach((s) => s.classList.remove('active', 'done'));
-    const stageIdx = stages.indexOf(stage);
-    stages.forEach((st, i) => {
-      const el = document.querySelector(`.pipeline-step[data-stage="${st}"]`);
-      if (!el) return;
-      if (i < stageIdx) el.classList.add('done');
-      if (i === stageIdx) el.classList.add('active');
-    });
+    // pipeline-nav 已移除，空实现保持调用兼容
   }
 
   // 轮询动画 spinner

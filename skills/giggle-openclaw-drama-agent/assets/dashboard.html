@@ -333,30 +333,6 @@
     max-width: 640px; line-height: 1.5;
   }
 
-  .pipeline-nav {
-    display: flex; gap: 0; margin-bottom: 18px;
-    border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
-  }
-  .pipeline-step {
-    flex: 1; padding: 16px 20px; display: flex; align-items: center; gap: 10px;
-    border-right: 1px solid var(--line); position: relative; transition: all .3s ease;
-  }
-  .pipeline-step:last-child { border-right: none; }
-  .pipeline-step .ps-icon { font-size: 16px; opacity: .4; transition: opacity .3s ease; }
-  .pipeline-step .ps-label {
-    font-family: var(--mono); font-size: 12px; color: var(--text-3);
-    letter-spacing: 1px; text-transform: uppercase; transition: color .3s ease;
-  }
-  .pipeline-step.active { background: rgba(232,179,57,.06); }
-  .pipeline-step.active .ps-icon { opacity: 1; }
-  .pipeline-step.active .ps-label { color: var(--gold); }
-  .pipeline-step.active::after {
-    content: ''; position: absolute; left: 0; right: 0; bottom: -1px;
-    height: 2px; background: var(--gold);
-    box-shadow: 0 0 12px var(--gold);
-  }
-  .pipeline-step.done .ps-icon { opacity: 1; }
-  .pipeline-step.done .ps-label { color: var(--green); }
 
   .terminal-window {
     background: #08080A; border: 1px solid var(--line);
@@ -1032,29 +1008,7 @@
     </div>
   </div>
 
-  <!-- Pipeline step nav -->
-  <div class="pipeline-nav" id="pipelineNav">
-    <div class="pipeline-step" data-stage="script">
-      <span class="ps-icon">✨</span>
-      <span class="ps-label">Script</span>
-    </div>
-    <div class="pipeline-step" data-stage="casting">
-      <span class="ps-icon">👥</span>
-      <span class="ps-label">Casting</span>
-    </div>
-    <div class="pipeline-step" data-stage="storyboard">
-      <span class="ps-icon">🎬</span>
-      <span class="ps-label">Storyboard</span>
-    </div>
-    <div class="pipeline-step" data-stage="render">
-      <span class="ps-icon">🎞</span>
-      <span class="ps-label">Render</span>
-    </div>
-    <div class="pipeline-step" data-stage="distribute">
-      <span class="ps-icon">📡</span>
-      <span class="ps-label">Distribute</span>
-    </div>
-  </div>
+  
 
   <!-- Terminal window -->
   <div class="terminal-window">
