@@ -91,7 +91,7 @@
     const views = p.views || {};
     const earnings = p.earnings || {};
     const dist = p.distribution || [];
-    
+
     const h = document.getElementById('creatorHandle');
     const m = document.getElementById('creatorMeta');
     const q = document.getElementById('testimonialQuote');
@@ -290,10 +290,10 @@
     setStage(stage || 'script');
 
     const payloadStr = String(payload || '');
-    // 检测轮询类消息（含"中"/"中..."/"ing"/"轮询"/"等待"/"进度"）
+    // 检测轮询类消息(含"中"/"中..."/"ing"/"轮询"/"等待"/"进度")
     const isPoll = /中\s*\d|generating|pending|processing|等待|轮询|进度|in progress/.test(payloadStr);
 
-    // 对同一 tagClass+关键词 的轮询行复用（更新而非追加）
+    // 对同一 tagClass+关键词 的轮询行复用(更新而非追加)
     const pollKey = isPoll ? tagClass + ':' + payloadStr.replace(/\d+/g, '#') : null;
     if (pollKey && _pollLines.has(pollKey)) {
       const {el, baseEl} = _pollLines.get(pollKey);
@@ -320,7 +320,7 @@
       _pollLines.set(pollKey, {el: spinSpan, baseEl: baseSpan});
     } else {
       text.textContent = payloadStr;
-      // 清理已完成的轮询行（同 tagClass 的）
+      // 清理已完成的轮询行(同 tagClass 的)
       for (const [k] of _pollLines) {
         if (k.startsWith(tagClass + ':')) _pollLines.delete(k);
       }
@@ -347,7 +347,7 @@
     return 'RUNNING';
   }
 
-  // 单集轮询：持续拉取 runId 日志直到完成/失败，返回最终状态
+  // 单集轮询:持续拉取 runId 日志直到完成/失败,返回最终状态
   async function pollRunStatus(runId, tip, runBtn) {
     activeRunId = runId;
     lastLogId = 0;
@@ -385,7 +385,7 @@
     });
   }
 
-  // 全剧流水线轮询：持续跟踪所有集的日志，自动切换
+  // 全剧流水线轮询:持续跟踪所有集的日志,自动切换
   async function pollPipeline(projectUuid) {
     const tip = document.getElementById('oclawTip');
     let trackingRunId = null;   // 当前正在显示日志的 run_id
@@ -400,7 +400,7 @@
     if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
     activeRunId = null;
 
-    // 页面刷新恢复时，先获取各集当前最新日志 ID，避免重复显示历史日志
+    // 页面刷新恢复时,先获取各集当前最新日志 ID,避免重复显示历史日志
     let initialized = false;
 
     const loopTimer = setInterval(async () => {
@@ -410,7 +410,7 @@
         const eps = json.data?.episodes || [];
         const pStatus = json.data?.project?.status || '';
 
-        // 首次轮询：初始化各集 lastLogId 为当前最新，不重放历史日志
+        // 首次轮询:初始化各集 lastLogId 为当前最新,不重放历史日志
         if (!initialized) {
           initialized = true;
           for (const ep of eps) {
@@ -422,7 +422,7 @@
               epLastLogId[ep.run_id] = Number(logs[logs.length-1].id || 0);
             }
           }
-          appendLine('system', 'SYSTEM', '[恢复] 已跳过历史日志，从当前进度继续显示', 'system');
+          appendLine('system', 'SYSTEM', '[恢复] 已跳过历史日志,从当前进度继续显示', 'system');
         }
 
         // 刷新剧集列表
@@ -430,7 +430,7 @@
           renderStoryEpisodes(projectUuid).catch(() => {});
         }
 
-        // 找当前 running 的集（按集号最小优先）
+        // 找当前 running 的集(按集号最小优先)
         const runningEp = eps.filter(e => ACTIVE_STATUSES.has(e.status) && e.run_id)
                              .sort((a,b) => a.episode_no - b.episode_no)[0];
 
@@ -457,7 +457,7 @@
               appendLine(l.tagClass, l.tagText, l.payload, l.stage);
               epLastLogId[runId] = Math.max(epLastLogId[runId] || 0, Number(l.id || 0));
             });
-            // 若该集 run 已完成，再拉一次确保尾部日志不遗漏
+            // 若该集 run 已完成,再拉一次确保尾部日志不遗漏
             const runStatus = sJson.run?.status;
             if (runStatus === 'completed' || runStatus === 'failed' || runStatus === 'phase1_done') {
               const sResp2 = await fetch(`/api/agent/status/${runId}?since_id=${epLastLogId[runId] || 0}`);
@@ -471,21 +471,21 @@
             }
           }
         } else {
-          // 没有 running 集：检查是否有 phase1_done 在等 Phase2
+          // 没有 running 集:检查是否有 phase1_done 在等 Phase2
           const hasPhase1Done = eps.some(e => e.status === 'phase1_done');
           const hasRunning = eps.some(e => e.status === 'running');
 
           if (hasPhase1Done && !hasRunning) {
-            if (tip) tip.textContent = 'Phase 1 完成，等待 Phase 2 开始...';
+            if (tip) tip.textContent = 'Phase 1 完成,等待 Phase 2 开始...';
             consecutiveIdle++;
           } else {
             consecutiveIdle++;
           }
 
-          // 项目最终完成：先把所有集的剩余日志全部拉完，再停止
+          // 项目最终完成:先把所有集的剩余日志全部拉完,再停止
           if (TERMINAL_STATUSES.has(pStatus)) {
             clearInterval(loopTimer);
-            // 最后一轮：把每一集的日志拉到最新，确保 100% 和视频地址都显示出来
+            // 最后一轮:把每一集的日志拉到最新,确保 100% 和视频地址都显示出来
             for (const ep2 of eps) {
               if (!ep2.run_id) continue;
               const since2 = epLastLogId[ep2.run_id] || 0;
@@ -501,14 +501,14 @@
               } catch(_) {}
             }
             const ok = pStatus === 'completed';
-            if (tip) tip.textContent = ok ? '🎉 全剧制作完成！' : '全剧制作结束（部分集失败）';
+            if (tip) tip.textContent = ok ? '🎉 全剧制作完成!' : '全剧制作结束(部分集失败)';
             appendLine('system', 'SYSTEM', `━━━ 全剧流水线结束 [${pStatus}] ━━━`, 'system');
             await renderStoryEpisodes(projectUuid);
             await refreshStoryWorkspace();
           }
         }
       } catch(e) {
-        // 忽略单次轮询错误，继续
+        // 忽略单次轮询错误,继续
       }
     }, 2000);
 
@@ -559,7 +559,7 @@
     const runBtn = document.getElementById(`run-ep-${episodeNo}`);
     const tip = document.getElementById('oclawTip');
     if (runBtn) runBtn.disabled = true;
-    if (tip) tip.textContent = `EP${episodeNo} 已提交，开始执行...`;
+    if (tip) tip.textContent = `EP${episodeNo} 已提交,开始执行...`;
     if (termLog) termLog.innerHTML = '';
     try {
       const resp = await fetch(`/api/agent/projects/${projectUuid}/episodes/${episodeNo}/run`, {
@@ -569,7 +569,7 @@
       });
       const data = await resp.json();
       if (!resp.ok || !data.ok) throw new Error(data.error || 'run episode failed');
-      appendLine('system', 'SYSTEM', `EP${episodeNo}任务已提交，run_id: ${data.data.runId}`, 'script');
+      appendLine('system', 'SYSTEM', `EP${episodeNo}任务已提交,run_id: ${data.data.runId}`, 'script');
       await pollRunStatus(data.data.runId, tip, runBtn);
     } catch (e) {
       appendLine('system', 'SYSTEM', `EP${episodeNo} 启动失败: ${e.message}`, 'distribute');
@@ -600,7 +600,7 @@
       box.innerHTML = `project_uuid: ${projectUuid}<br>characters: ${chars.length}<br>active mappings: ${mappings.length}<br>${mappingRows || 'no mappings yet'}`;
     }
 
-    // 如果项目正在生成剧本（且还没有集数据），显示等待提示
+    // 如果项目正在生成剧本(且还没有集数据),显示等待提示
     const isGeneratingStatus = typeof data.project?.status === 'string'
       && (data.project.status === 'generating' || data.project.status.startsWith('generating:'));
     if (isGeneratingStatus && eps.length === 0) {
@@ -609,7 +609,7 @@
         <div class="agent-task" style="font-size:14px;">⏳ AI 正在生成剧本${prog ? ' (' + prog + ')' : ''}...</div>
         <div style="margin-top:8px;font-size:11px;opacity:.5;">通常需要 1-2 分钟</div>
       </div>`;
-      // 不 return，继续执行下面的控制台轮询逻辑
+      // 不 return,继续执行下面的控制台轮询逻辑
     }
 
     wall.innerHTML = eps.map((ep, idx) => {
@@ -620,7 +620,7 @@
           : ep.status === 'failed' || ep.status === 'partial_failed'
             ? { cls: 'queued', label: 'FAILED', pct: 10 }
             : { cls: 'queued', label: 'PLANNED', pct: 8 };
-      // 封面图：优先 cover_url，否则从 export_url 推导 .thumb.jpg
+      // 封面图:优先 cover_url,否则从 export_url 推导 .thumb.jpg
       const _eu = ep.export_url || '';
       const _thumbMatch = _eu.match(/(https:\/\/assets\.giggle\.pro\/public\/ai_director\/[^\/]+\/[^.?]+)\.mp4/);
       const thumbUrl = ep.cover_url || ep.thumbnail_url || (_thumbMatch ? _thumbMatch[1] + '.thumb.jpg' : '');
@@ -635,7 +635,7 @@
           </div>
           <div class="ep-info">
             <div class="ep-show">${ep.title || `第${ep.episode_no}集`}</div>
-            <div class="ep-title" style="font-size:11px;opacity:.6;height:auto;">${ep.giggle_project_id ? 'Giggle: ' + ep.giggle_project_id.slice(0,8) + '…' : '未关联 Giggle 项目'}</div>
+            <div class="ep-title" style="font-size:11px;opacity:.6;height:auto;">${ep.giggle_project_id ? 'Giggle: ' + ep.giggle_project_id.slice(0,8) + '...' : '未关联 Giggle 项目'}</div>
             <div class="ep-bar"><span style="width:${st.pct}%;"></span></div>
             <div class="ep-meta"><span>${ep.status || '-'}</span><span>${ep.export_url ? '✓ 视频' : '-'}</span></div>
             <div style="display:flex;gap:6px;margin-top:8px;">
@@ -654,8 +654,8 @@
     window._currentShots = data.shots || [];
     window._currentProjectUuid = projectUuid;
 
-    // 剧本生成中：用 scriptRunId 接续控制台日志轮询
-    // status='generating'（无进度）或 'generating:N/M'（有进度）都立刻轮询
+    // 剧本生成中:用 scriptRunId 接续控制台日志轮询
+    // status='generating'(无进度)或 'generating:N/M'(有进度)都立刻轮询
     const scriptRunId = data.scriptRunId;
     const isScriptGenerating = typeof data.project?.status === 'string'
       && (data.project.status === 'generating' || data.project.status.startsWith('generating:'));
@@ -663,16 +663,16 @@
       const tip = document.getElementById('oclawTip');
       if (tip) {
         const prog = data.project.status.includes(':') ? ` ${data.project.status.split(':')[1]}` : '';
-        tip.textContent = `剧本生成中${prog}，控制台实时显示进度...`;
+        tip.textContent = `剧本生成中${prog},控制台实时显示进度...`;
       }
       if (termLog) termLog.innerHTML = '';
       lastLogId = 0;
-      appendLine('system', 'SYSTEM', '正在匹配风格、准备生成剧本，请稍候...', 'script');
-      // 等剧本生成完成，然后自动切换到全剧流水线轮询
+      appendLine('system', 'SYSTEM', '正在匹配风格、准备生成剧本,请稍候...', 'script');
+      // 等剧本生成完成,然后自动切换到全剧流水线轮询
       await pollRunStatus(scriptRunId, tip, null);
-      // 剧本完成后，自动跟踪后续流水线进度
+      // 剧本完成后,自动跟踪后续流水线进度
       if (selectedStoryProjectUuid) {
-        appendLine('system', 'SYSTEM', '━━ 剧本生成完成，自动跟踪视频制作进度 ━━', 'system');
+        appendLine('system', 'SYSTEM', '━━ 剧本生成完成,自动跟踪视频制作进度 ━━', 'system');
         if (window._pipelineLoopTimer) { clearInterval(window._pipelineLoopTimer); window._pipelineLoopTimer = null; }
         pollPipeline(selectedStoryProjectUuid);
       }
@@ -686,7 +686,7 @@
     });
   }
 
-  // 页面加载时自动恢复轮询（检测 running 状态的集数）
+  // 页面加载时自动恢复轮询(检测 running 状态的集数)
   async function autoResumePolling() {
     try {
       // 停止已有的流水线轮询
@@ -701,7 +701,7 @@
           const json = await resp.json();
           const eps = json.data?.episodes || [];
           const pStatus = json.data?.project?.status || '';
-          // 有集在 running/phase1_done 或项目在 running/generating 状态，启动全剧流水线轮询
+          // 有集在 running/phase1_done 或项目在 running/generating 状态,启动全剧流水线轮询
           const hasActive = eps.some(e => ['running','phase1_done'].includes(e.status) && e.run_id);
           const isActive = hasActive || pStatus === 'running' || pStatus === 'generating' || pStatus.startsWith('generating:');
           if (isActive) {
@@ -709,8 +709,8 @@
             renderStoryProjects();
             await renderStoryEpisodes(p.project_uuid);
             const tip = document.getElementById('oclawTip');
-            if (tip) tip.textContent = '检测到任务进行中，已自动恢复轮询...';
-            appendLine('system', 'SYSTEM', '[恢复] 检测到流水线进行中，自动跟踪进度', 'system');
+            if (tip) tip.textContent = '检测到任务进行中,已自动恢复轮询...';
+            appendLine('system', 'SYSTEM', '[恢复] 检测到流水线进行中,自动跟踪进度', 'system');
             pollPipeline(p.project_uuid);
             return;
           }
@@ -729,43 +729,39 @@
     }
     renderStoryProjects();
     if (selectedStoryProjectUuid) await renderStoryEpisodes(selectedStoryProjectUuid);
-    // 如果有剧本生成中的项目，启动自动轮询
+    // 如果有剧本生成中的项目,启动自动轮询
     if (typeof pollScriptGen === 'function' && storyProjects.some(p => typeof p.status === 'string' && p.status.startsWith('generating:'))) pollScriptGen();
   }
 
   async function createStoryProjectFromInput() {
     const ideaInput = document.getElementById('oclawIdea');
     const nameInput = document.getElementById('oclawProjectName');
-    const countInput = document.getElementById('oclawEpisodeCount');
     const runBtn = document.getElementById('oclawRun');
-    const tip = document.getElementById('oclawTip');
     const idea = (ideaInput?.value || '').trim();
-    if (!idea) {
-      if (tip) tip.textContent = '请先输入项目创意。';
-      return;
-    }
-    if (runBtn) runBtn.disabled = true;
+    if (!idea) { alert('请先输入短剧想法'); return; }
+    if (runBtn) { runBtn.disabled = true; runBtn.textContent = '创建中...'; }
     try {
       const resp = await fetch('/api/agent/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: (nameInput?.value || '').trim() || '',
+          name: (nameInput?.value || '').trim() || '',   // 空则后端 AI 自动命名
           idea,
-          episodeCount: Number(countInput?.value || 1),
           language: 'zh-CN',
           aspect: '16:9',
+          // episodeCount 不再由前端传，后端从 idea 解析
         }),
       });
       const data = await resp.json();
       if (!resp.ok || !data.ok) throw new Error(data.error || 'create project failed');
       selectedStoryProjectUuid = data.data.project.project_uuid;
-      if (tip) tip.textContent = '项目已创建，可在中间点击“生产 EP”逐集执行。';
+      if (ideaInput) ideaInput.value = '';
+      if (nameInput) nameInput.value = '';
       await refreshStoryWorkspace();
     } catch (e) {
-      if (tip) tip.textContent = `创建失败: ${e.message}`;
+      alert(`创建失败: ${e.message}`);
     } finally {
-      if (runBtn) runBtn.disabled = false;
+      if (runBtn) { runBtn.disabled = false; runBtn.textContent = '创建项目'; }
     }
   }
 
@@ -886,7 +882,7 @@
     }
 
     if (runBtn) runBtn.disabled = true;
-    if (tip) tip.textContent = '任务执行中，请等待所有步骤自动完成...';
+    if (tip) tip.textContent = '任务执行中,请等待所有步骤自动完成...';
     if (termLog) termLog.innerHTML = '';
     lastLogId = 0;
 
@@ -907,14 +903,14 @@
 
       if (!resp.ok || !data.ok) {
         appendLine('system', 'SYSTEM', `Run create failed: ${data.error || 'unknown error'}`, 'distribute');
-        if (tip) tip.textContent = '执行失败，请检查 API 配置与日志。';
+        if (tip) tip.textContent = '执行失败,请检查 API 配置与日志。';
         if (runBtn) runBtn.disabled = false;
         return;
       }
 
       activeRunId = data.runId;
-      appendLine('system', 'SYSTEM', `任务已提交，run_id: ${activeRunId}`, 'script');
-      if (tip) tip.textContent = '任务已提交，正在自动执行并同步状态...';
+      appendLine('system', 'SYSTEM', `任务已提交,run_id: ${activeRunId}`, 'script');
+      if (tip) tip.textContent = '任务已提交,正在自动执行并同步状态...';
       await refreshLocalSnapshot();
 
       if (pollTimer) clearInterval(pollTimer);
@@ -942,7 +938,7 @@
             if (runBtn) runBtn.disabled = false;
             await refreshLocalSnapshot();
           } else if (sJson.run?.status === 'failed') {
-            if (tip) tip.textContent = '执行失败，请查看上方日志。';
+            if (tip) tip.textContent = '执行失败,请查看上方日志。';
             if (pollTimer) clearInterval(pollTimer);
             pollTimer = null;
             activeRunId = null;
@@ -951,7 +947,7 @@
           }
         } catch (e) {
           appendLine('system', 'SYSTEM', `状态轮询失败: ${e.message}`, 'distribute');
-          if (tip) tip.textContent = '状态同步失败，请检查服务日志。';
+          if (tip) tip.textContent = '状态同步失败,请检查服务日志。';
           if (pollTimer) clearInterval(pollTimer);
           pollTimer = null;
           activeRunId = null;
@@ -960,7 +956,7 @@
       }, 1500);
     } catch (err) {
       appendLine('system', 'SYSTEM', 'Pipeline failed: ' + err.message, 'distribute');
-      if (tip) tip.textContent = '请求失败，请检查服务是否启动。';
+      if (tip) tip.textContent = '请求失败,请检查服务是否启动。';
       if (runBtn) runBtn.disabled = false;
       activeRunId = null;
       if (pollTimer) {
@@ -975,9 +971,8 @@
     panel.className = 'oclaw-panel';
     panel.innerHTML = `
       <div class="oclaw-row">
-        <input id="oclawProjectName" class="oclaw-input" style="max-width:220px;min-width:220px;" placeholder="项目名（可选）" />
-        <input id="oclawEpisodeCount" class="oclaw-input" style="max-width:120px;min-width:120px;" type="number" min="1" value="3" />
-        <input id="oclawIdea" class="oclaw-input" placeholder="输入短剧想法，例如：重生复仇甜宠，30集，每集60秒" />
+        <input id="oclawProjectName" class="oclaw-input" style="max-width:220px;min-width:220px;" placeholder="项目名(可选,AI自动命名)" />
+        <input id="oclawIdea" class="oclaw-input" placeholder="输入短剧想法,例如:重生复仇甜宠,10集,每集60秒" />
         <button id="oclawRun" class="oclaw-btn">创建项目</button>
         <button id="oclawRefresh" class="oclaw-btn" style="background:#222;color:#ddd;">刷新项目数据</button>
       </div>
@@ -1027,7 +1022,7 @@ function showEpModal(e, epNo) {
   const exportUrl = ep.export_url || '';
   const giggleId = ep.giggle_project_id || '';
 
-  // 角色信息（从 window._currentChars 读取）
+  // 角色信息(从 window._currentChars 读取)
   const chars = window._currentChars || [];
   const charsHtml = chars.length ? chars.map(c => `
     <div style="display:flex;align-items:center;gap:10px;padding:10px;background:#1a1a1f;border:1px solid #2a2a30;border-radius:6px;">
@@ -1039,7 +1034,7 @@ function showEpModal(e, epNo) {
       </div>
     </div>`).join('') : '<div style="color:#5e5e66;font-size:12px;">暂无角色数据</div>';
 
-  // 分镜信息（从 window._currentShots 读取）
+  // 分镜信息(从 window._currentShots 读取)
   const shots = (window._currentShots || []).filter(s => s.giggle_project_id === giggleId || !giggleId);
   const shotsHtml = shots.length ? `
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:8px;">
@@ -1051,7 +1046,7 @@ function showEpModal(e, epNo) {
             <div style="font-size:9px;color:${s.video_generating_status === 'completed' ? '#4ade80' : s.video_generating_status === 'failed' ? '#f87171' : '#e8b339'};">${s.video_generating_status || s.generating_status || 'pending'}</div>
           </div>
         </div>`).join('')}
-    </div>` : '<div style="color:#5e5e66;font-size:12px;">暂无分镜数据（生产后可见）</div>';
+    </div>` : '<div style="color:#5e5e66;font-size:12px;">暂无分镜数据(生产后可见)</div>';
 
   const modal = document.createElement('div');
   modal.id = 'epDetailModal';
@@ -1063,7 +1058,7 @@ function showEpModal(e, epNo) {
       <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #1f1f24;background:#111114;position:sticky;top:0;z-index:2;">
         <div>
           <div style="font-family:'Instrument Serif',serif;font-style:italic;font-size:20px;color:#e8b339;">${projectName} · ${title}</div>
-          <div style="font-size:11px;color:#5e5e66;margin-top:3px;font-family:monospace;">EP${epNo} · ${ep.status || '-'} ${giggleId ? '· Giggle: ' + giggleId.slice(0,8) + '…' : ''}</div>
+          <div style="font-size:11px;color:#5e5e66;margin-top:3px;font-family:monospace;">EP${epNo} · ${ep.status || '-'} ${giggleId ? '· Giggle: ' + giggleId.slice(0,8) + '...' : ''}</div>
         </div>
         <button onclick="document.getElementById('epDetailModal').remove()" style="background:none;border:1px solid #2a2a30;color:#a4a4ab;border-radius:6px;padding:6px 14px;cursor:pointer;font-size:13px;transition:all .2s;" onmouseover="this.style.borderColor='#e8b339';this.style.color='#e8b339'" onmouseout="this.style.borderColor='#2a2a30';this.style.color='#a4a4ab'">✕ 关闭</button>
       </div>
@@ -1084,13 +1079,13 @@ function showEpModal(e, epNo) {
         <button class="ep-modal-tab active" data-panel="script" style="flex:1;padding:14px;background:rgba(232,179,57,.06);border:none;border-bottom:2px solid #e8b339;color:#e8b339;font-family:monospace;font-size:11px;letter-spacing:1px;cursor:pointer;">✨ 剧本</button>
         <button class="ep-modal-tab" data-panel="chars" style="flex:1;padding:14px;background:none;border:none;border-bottom:2px solid transparent;color:#5e5e66;font-family:monospace;font-size:11px;letter-spacing:1px;cursor:pointer;">👥 角色</button>
         <button class="ep-modal-tab" data-panel="shots" style="flex:1;padding:14px;background:none;border:none;border-bottom:2px solid transparent;color:#5e5e66;font-family:monospace;font-size:11px;letter-spacing:1px;cursor:pointer;">🎬 分镜</button>
-        <button class="ep-modal-tab" data-panel="info" style="flex:1;padding:14px;background:none;border:none;border-bottom:2px solid transparent;color:#5e5e66;font-family:monospace;font-size:11px;letter-spacing:1px;cursor:pointer;">ℹ️ 信息</button>
+        <button class="ep-modal-tab" data-panel="info" style="flex:1;padding:14px;background:none;border:none;border-bottom:2px solid transparent;color:#5e5e66;font-family:monospace;font-size:11px;letter-spacing:1px;cursor:pointer;">i️ 信息</button>
       </div>
 
       <!-- 剧本面板 -->
       <div class="ep-modal-panel" data-panel="script" style="padding:24px;display:block;">
         <div style="font-family:monospace;font-size:12px;color:#5e5e66;margin-bottom:12px;letter-spacing:1px;">SCRIPT · EP${epNo}</div>
-        <div style="font-size:13px;line-height:1.9;color:#d4d4d8;white-space:pre-wrap;background:#0a0a0c;padding:20px;border:1px solid #1f1f24;border-radius:6px;max-height:480px;overflow-y:auto;">${ep.script_text || ep.outline || '（暂无剧本内容）'}</div>
+        <div style="font-size:13px;line-height:1.9;color:#d4d4d8;white-space:pre-wrap;background:#0a0a0c;padding:20px;border:1px solid #1f1f24;border-radius:6px;max-height:480px;overflow-y:auto;">${ep.script_text || ep.outline || '(暂无剧本内容)'}</div>
       </div>
 
       <!-- 角色面板 -->
@@ -1099,7 +1094,7 @@ function showEpModal(e, epNo) {
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;">${charsHtml}</div>
       </div>
 
-      <!-- 分镜面板（懒加载） -->
+      <!-- 分镜面板(懒加载) -->
       <div class="ep-modal-panel" data-panel="shots" style="padding:24px;display:none;">
         <div style="font-family:monospace;font-size:12px;color:#5e5e66;margin-bottom:12px;letter-spacing:1px;">STORYBOARD</div>
         <div class="shots-body"><div style="color:#5e5e66;font-size:12px;">点击此 Tab 加载分镜</div></div>
@@ -1129,7 +1124,7 @@ function showEpModal(e, epNo) {
 
     </div>`;
 
-  // Tab 切换（分镜 Tab 懒加载）
+  // Tab 切换(分镜 Tab 懒加载)
   const projectUuidForShots = window._currentProjectUuid || '';
   modal.querySelectorAll('.ep-modal-tab').forEach(tab => {
     tab.addEventListener('click', async () => {
@@ -1145,7 +1140,7 @@ function showEpModal(e, epNo) {
       const panel = modal.querySelector(`.ep-modal-panel[data-panel="${tab.dataset.panel}"]`);
       panel.style.display = 'block';
 
-      // 分镜 Tab：实时从 Giggle 拉取
+      // 分镜 Tab:实时从 Giggle 拉取
       if (tab.dataset.panel === 'shots' && !panel.dataset.loaded) {
         panel.dataset.loaded = '1';
         const shotsBody = panel.querySelector('.shots-body');
@@ -1155,7 +1150,7 @@ function showEpModal(e, epNo) {
           const j = await r.json();
           const list = j.data || [];
           if (!shotsBody) return;
-          if (!list.length) { shotsBody.innerHTML = '<div style="color:#5e5e66;font-size:12px;">暂无分镜数据（生产后可见）</div>'; return; }
+          if (!list.length) { shotsBody.innerHTML = '<div style="color:#5e5e66;font-size:12px;">暂无分镜数据(生产后可见)</div>'; return; }
           shotsBody.innerHTML = `
             <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:8px;">
               ${list.map(s => `

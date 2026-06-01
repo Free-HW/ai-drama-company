@@ -295,6 +295,34 @@ function buildLocalScriptFallback(idea, total) {
   });
 }
 
+
+// 用 AI 从 idea 中智能提取项目名称
+async function aiGenerateProjectName(idea) {
+  try {
+    const { default: OpenAI } = await import('openai');
+    const client = new OpenAI({ baseURL: process.env.OPENAI_BASE_URL, apiKey: process.env.OPENAI_API_KEY });
+    const resp = await client.chat.completions.create({
+      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+      max_tokens: 30,
+      messages: [
+        { role: 'system', content: '你是一个短剧命名专家。根据用户描述，提炼出一个简洁有力的短剧名称，4-10个汉字，不加书名号，不加标点，只输出名称本身。' },
+        { role: 'user', content: idea },
+      ],
+    });
+    const name = (resp.choices[0]?.message?.content || '').trim().replace(/[《》「」【】""''\n]/g, '');
+    return name || null;
+  } catch (e) {
+    console.warn('[AIName] failed:', e.message);
+    return null;
+  }
+}
+
+// 从 idea 文本中解析集数，匹配"10集""共10集""10期"等，未匹配返回默认值 10
+function parseEpisodeCountFromIdea(idea) {
+  const m = String(idea).match(/(?:共|全|约)?\s*(\d+)\s*(?:集|期|话|章)/);
+  return m ? Math.min(Math.max(parseInt(m[1]), 1), 50) : 10;
+}
+
 app.post('/api/agent/projects', async (req, res) => {
   try {
     const { name, idea, language, aspect, style, episodeCount, videoDuration, bible, characters } = req.body || {};
@@ -309,16 +337,22 @@ app.post('/api/agent/projects', async (req, res) => {
       const seconds = isMinute ? val * 60 : val;
       if (VALID_DURATIONS.includes(seconds)) parsedDuration = seconds;
     }
+    // 解析集数：前端传则用，否则从 idea 解析，默认 10 集
+    const finalEpisodeCount = episodeCount ? Math.min(Math.max(Number(episodeCount), 1), 50)
+                                            : parseEpisodeCountFromIdea(idea);
+    // 项目名：用户输入优先，否则 AI 智能命名
+    const finalName = (name && name.trim()) ? name.trim()
+                                            : (await aiGenerateProjectName(idea.trim())) || `短剧项目-${new Date().toISOString().slice(0, 10)}`;
     const projectUuid = randomUUID();
     await createStoryProject(db, {
       projectUuid,
-      name: name || `短剧项目-${new Date().toISOString().slice(0, 10)}`,
+      name: finalName,
       idea: idea.trim(),
       language: language || 'zh-CN',
       aspect: aspect || '16:9',
       style: style || '',
-      episodeCount: Number(episodeCount || 1),
-      styleId: 146,        // 创建时先用默认值，后续 matchStyleId 会更新
+      episodeCount: finalEpisodeCount,
+      styleId: 146,
       videoDuration: parsedDuration,
     });
     // 移除旧的单独 UPDATE video_duration（已合并到 createStoryProject）
@@ -341,7 +375,7 @@ app.post('/api/agent/projects', async (req, res) => {
       // 立即写一条日志，前端控制台马上有反馈
       const initRunId = db.prepare('SELECT script_run_id FROM story_projects WHERE project_uuid=?').get(projectUuid)?.script_run_id;
       // 先触发剧本生成（不等风格匹配），让前端立刻看到进度
-      triggerScriptGeneration(projectUuid, idea.trim(), Number(episodeCount || 1));
+      triggerScriptGeneration(projectUuid, idea.trim(), finalEpisodeCount);
       // 并行匹配风格，完成后更新 DB
       matchStyleId(idea.trim()).then(styleId => {
         db.prepare('UPDATE story_projects SET style_id=?, updated_at=? WHERE project_uuid=?')
