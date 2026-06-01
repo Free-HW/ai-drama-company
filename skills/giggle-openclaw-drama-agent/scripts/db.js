@@ -40,6 +40,10 @@ async function initSchema(db) {
       script_run_id TEXT,
       style_id INTEGER DEFAULT 146,
       video_duration INTEGER DEFAULT 60,
+      cover_url TEXT,
+      x2c_project_id TEXT,
+      x2c_status TEXT,
+      x2c_published_at TEXT,
       created_at TEXT, updated_at TEXT
     );
     CREATE TABLE IF NOT EXISTS project_bibles (
@@ -51,7 +55,7 @@ async function initSchema(db) {
     CREATE TABLE IF NOT EXISTS project_episodes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       project_uuid TEXT, episode_no INTEGER, title TEXT, outline TEXT, script_text TEXT,
-      status TEXT, run_id TEXT, giggle_project_id TEXT, export_url TEXT,
+      status TEXT, run_id TEXT, giggle_project_id TEXT, export_url TEXT, cover_url TEXT,
       created_at TEXT, updated_at TEXT,
       UNIQUE(project_uuid, episode_no)
     );

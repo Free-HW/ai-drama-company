@@ -1085,39 +1085,35 @@
 
 <!-- HERO STRIP -->
 <section class="hero">
-  <div class="hero-eyebrow">Today · 这家公司今天的实况</div>
+  <div class="hero-eyebrow" id="heroEyebrow">X2C Platform · 实时数据</div>
   <div class="hero-grid">
     <div class="hero-cell">
-      <div class="hero-label">Revenue · Today</div>
-      <div class="hero-value"><span class="currency">$</span><span class="accent">2,847</span><span style="font-size:38px; color: var(--text-3); margin-left: 6px;">.31</span></div>
+      <div class="hero-label">USDC Balance</div>
+      <div class="hero-value"><span class="currency">$</span><span class="accent" id="heroUsdc">--</span></div>
       <div class="hero-delta">
-        <span class="delta-up">▲ +38.2%</span>
-        <span style="color: var(--text-3);">vs yesterday</span>
-        <span class="delta-bar"></span>
+        <span style="color:var(--text-3);" id="heroWallet">wallet --</span>
       </div>
     </div>
     <div class="hero-cell">
-      <div class="hero-label">Episodes Shipped</div>
-      <div class="hero-value">14<span style="font-size:32px; color: var(--text-3); margin-left: 8px;">/ 60</span></div>
+      <div class="hero-label">X2C Pending Claim</div>
+      <div class="hero-value"><span id="heroPendingClaim" style="font-size:36px;">--</span><span style="font-size:20px;color:var(--text-3);margin-left:6px;">X2C</span></div>
       <div class="hero-delta">
-        <span style="color: var(--gold);">● 6 rendering</span>
-        <span style="color: var(--text-3);">· 40 queued</span>
+        <span style="color:var(--gold);" id="heroPendingRelease">-- locked</span>
       </div>
     </div>
     <div class="hero-cell">
-      <div class="hero-label">Active Shows</div>
-      <div class="hero-value">7</div>
+      <div class="hero-label">X2C Wallet Balance</div>
+      <div class="hero-value"><span id="heroX2cBalance" style="font-size:36px;">--</span><span style="font-size:20px;color:var(--text-3);margin-left:6px;">X2C</span></div>
       <div class="hero-delta">
-        <span class="delta-up">+2</span>
-        <span style="color: var(--text-3);">launched this week</span>
+        <span style="color:var(--text-3);">on-chain balance</span>
       </div>
     </div>
     <div class="hero-cell">
-      <div class="hero-label">Auto-Run · Untouched</div>
-      <div class="hero-value">23<span style="font-size:32px; color: var(--text-3); margin-left: 6px;">h</span></div>
+      <div class="hero-label">Platform Credits</div>
+      <div class="hero-value"><span id="heroCredits">--</span></div>
       <div class="hero-delta">
-        <span style="color: var(--green);">●</span>
-        <span style="color: var(--text-3);">You haven't logged in</span>
+        <span style="color:var(--green);">●</span>
+        <span style="color:var(--text-3);">available credits</span>
       </div>
     </div>
   </div>
@@ -1367,49 +1363,27 @@
   <!-- RIGHT · CASH FLOW -->
   <aside class="pane-right">
     
+    <!-- X2C 钱包余额卡片 -->
     <div>
       <div class="cash-now">
         <div class="cash-now-label">
-          <span>Just landed · 47 seconds ago</span>
+          <span>X2C Wallet · 实时余额</span>
           <span class="small-dot"></span>
         </div>
-        <div class="cash-now-value"><span class="currency">$</span>1,284<span style="font-size:22px; color: var(--text-3);">.18</span></div>
-        <div class="cash-now-from">from TikTok Creator Fund · 赌城暴富 EP02</div>
-        <div class="cash-now-time">→ wallet 54Jn...Tv6x · settled in 3.2s</div>
+        <div class="cash-now-value" id="x2cUsdcLarge"><span class="currency">$</span><span id="x2cUsdcVal">--</span></div>
+        <div class="cash-now-from" id="x2cWalletAddr">wallet --</div>
+        <div class="cash-now-time" id="x2cPendingInfo">X2C pending: -- · locked: --</div>
       </div>
     </div>
 
+    <!-- X2C 已发布项目 -->
     <div>
       <div class="pane-title" style="margin-bottom: 18px;">
-        <span>Today's Income Stream</span>
-        <span style="font-family: var(--mono); font-size: 10px; color: var(--text-3);">$2,847.31</span>
+        <span>已发布项目 · X2C</span>
+        <span style="font-family:var(--mono);font-size:10px;color:var(--text-3);" id="x2cPublishedCount">-- projects</span>
       </div>
-      <div class="timeline">
-        <div class="tl-item recent">
-          <div class="tl-time">16:33:34 · just now</div>
-          <div class="tl-amount"><span class="plus">+$ 1,284.18</span></div>
-          <div class="tl-source">TikTok · 赌城暴富 EP02 viral</div>
-        </div>
-        <div class="tl-item">
-          <div class="tl-time">15:18:02</div>
-          <div class="tl-amount"><span class="plus">+$ 421.00</span></div>
-          <div class="tl-source">YouTube Shorts · 契约婚姻 EP05</div>
-        </div>
-        <div class="tl-item">
-          <div class="tl-time">14:02:11</div>
-          <div class="tl-amount"><span class="plus">+$ 187.40</span></div>
-          <div class="tl-source">Instagram Reels · 乔峰传 EP02</div>
-        </div>
-        <div class="tl-item">
-          <div class="tl-time">12:44:08</div>
-          <div class="tl-amount"><span class="plus">+$ 624.73</span></div>
-          <div class="tl-source">TikTok · 朝阳逆袭 EP03</div>
-        </div>
-        <div class="tl-item">
-          <div class="tl-time">09:12:30</div>
-          <div class="tl-amount"><span class="plus">+$ 330.00</span></div>
-          <div class="tl-source">YouTube Shorts · 多剧集分成</div>
-        </div>
+      <div class="timeline" id="x2cPublishedList">
+        <div style="color:var(--text-3);font-family:var(--mono);font-size:11px;padding:12px 0;">加载中...</div>
       </div>
     </div>
 

@@ -34,6 +34,7 @@ const {
   upsertCharacterMapping,
   listCharacterMappings,
 } = require('./db');
+const { publishToX2C, getWalletBalance, listPublished } = require('./x2cPublish');
 
 const app = express();
 app.use(cors());
@@ -953,6 +954,36 @@ async function runAutoRun(projectUuid) {
     await finishRun(db, { runId: pipelineRunId, status: 'completed', exportUrl: '' });
     pipelineEmit('system', 'SYSTEM', `[Pipeline] 全剧流水线完成，已删除 ${deleted.length} 个角色`, 'system');
 
+    // ── X2C 自动发布（异步，不阻塞主流程，不影响现有功能）──
+    if (!hasFailed) {
+      const project = await getStoryProject(db, projectUuid);
+      // 检查是否已发布
+      if (!project?.x2c_project_id) {
+        pipelineEmit('system', 'SYSTEM', '[X2C] 开始自动发布到 X2C 平台...', 'system');
+        try {
+          const episodesForPublish = finalEps.map(e => ({
+            episode_no: e.episode_no,
+            export_url: e.export_url || '',
+            cover_url: e.cover_url || '',
+          }));
+          const result = await publishToX2C({
+            projectName: project.name,
+            idea: project.idea,
+            episodes: episodesForPublish,
+          });
+          // 写入 DB
+          db.prepare('UPDATE story_projects SET x2c_project_id=?,x2c_status=?,x2c_published_at=?,updated_at=? WHERE project_uuid=?')
+            .run(result.x2cProjectId, result.status, new Date().toISOString(), new Date().toISOString(), projectUuid);
+          pipelineEmit('system', 'SYSTEM', `[X2C] 发布成功！分类：${result.category}，项目ID：${result.x2cProjectId}，状态：${result.status}`, 'system');
+        } catch (e) {
+          pipelineEmit('system', 'SYSTEM', `[X2C] 发布失败（不影响制作结果）：${e.message}`, 'system');
+          console.error('[X2C] publish error:', e.message);
+        }
+      } else {
+        pipelineEmit('system', 'SYSTEM', `[X2C] 已发布，跳过（x2c_project_id=${project.x2c_project_id}）`, 'system');
+      }
+    }
+
     return { pipelineRunId, phase1Count: episodes.length, deletedCharacters: deleted };
 }
 
@@ -969,6 +1000,27 @@ app.post('/api/agent/projects/:projectUuid/auto-run', async (req, res) => {
     runAutoRun(projectUuid).catch(e => console.error('[AutoRun] failed:', e.message));
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// ── X2C 钉包余额查询 ──
+app.get('/api/x2c/balance', async (req, res) => {
+  try {
+    const data = await getWalletBalance();
+    res.json({ ok: true, data });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message, data: {} });
+  }
+});
+
+// ── X2C 已发布项目列表 ──
+app.get('/api/x2c/projects', async (req, res) => {
+  try {
+    const { page = 1, pageSize = 20, status = 'all' } = req.query;
+    const data = await listPublished({ page: Number(page), pageSize: Number(pageSize), status });
+    res.json({ ok: true, data });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message, data: {} });
   }
 });
 

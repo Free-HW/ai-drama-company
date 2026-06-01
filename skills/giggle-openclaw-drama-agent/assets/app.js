@@ -986,6 +986,8 @@
     if (runBtn) runBtn.addEventListener('click', createStoryProjectFromInput);
     if (refreshBtn) refreshBtn.addEventListener('click', refreshStoryWorkspace);
     refreshStoryWorkspace().then(autoResumePolling);
+    loadX2cData();
+    setInterval(loadX2cData, 120000); // 每2分钟刷新一次
 
     // 剧本生成中时自动轮询刷新
     let _scriptGenTimer = null;
@@ -1178,3 +1180,51 @@ function showEpModal(e, epNo) {
 
 // 兼容旧调用
 function showScriptModal(e, epNo) { showEpModal(e, epNo); }
+
+// ── X2C 数据加载 ──
+async function loadX2cData() {
+  try {
+    // 1. 余额
+    const bResp = await fetch('/api/x2c/balance');
+    const bJson = await bResp.json().catch(() => ({}));
+    if (bJson.ok && bJson.data) {
+      const d = bJson.data;
+      const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+      set('heroUsdc', Number(d.usdc_balance||0).toFixed(2));
+      set('heroPendingClaim', fmtX2c(d.x2c_pending_claim));
+      set('heroPendingRelease', fmtX2c(d.x2c_pending_release) + ' locked');
+      set('heroX2cBalance', fmtX2c(d.x2c_wallet_balance));
+      set('heroCredits', Number(d.credits||0).toLocaleString());
+      const shortWallet = (d.wallet_address||'').slice(0,6) + '...' + (d.wallet_address||'').slice(-4);
+      set('heroWallet', 'wallet ' + shortWallet);
+      set('x2cUsdcVal', Number(d.usdc_balance||0).toFixed(2));
+      set('x2cWalletAddr', '→ wallet ' + shortWallet);
+      set('x2cPendingInfo', `X2C pending: ${fmtX2c(d.x2c_pending_claim)} · locked: ${fmtX2c(d.x2c_pending_release)}`);
+    }
+    // 2. 已发布项目
+    const pResp = await fetch('/api/x2c/projects?status=all&pageSize=10');
+    const pJson = await pResp.json().catch(() => ({}));
+    const listEl = document.getElementById('x2cPublishedList');
+    const countEl = document.getElementById('x2cPublishedCount');
+    if (listEl && pJson.ok) {
+      const projects = pJson.data?.projects || pJson.data?.data || [];
+      if (countEl) countEl.textContent = projects.length + ' projects';
+      const statusColor = { approved:'var(--green)', pending_review:'var(--gold)', rejected:'#e05a5a', draft:'var(--text-3)' };
+      const statusLabel = { approved:'✅ 已上线', pending_review:'⏳ 审核中', rejected:'❌ 已拒绝', draft:'📝 草稿' };
+      listEl.innerHTML = projects.length ? projects.map(p => `
+        <div class="tl-item" style="border-left:2px solid ${statusColor[p.status]||'var(--line)'};padding-left:10px;margin-bottom:10px;">
+          <div class="tl-time" style="color:${statusColor[p.status]||'var(--text-3)'};">${statusLabel[p.status]||p.status}</div>
+          <div style="font-family:var(--mono);font-size:12px;color:var(--text);margin:3px 0;">${(p.title||'').slice(0,20)}</div>
+          <div class="tl-source">${p.category_name||''} · ${p.episode_count||1}集</div>
+        </div>`).join('')
+        : '<div style="color:var(--text-3);font-family:var(--mono);font-size:11px;padding:12px 0;">暂无已发布项目</div>';
+    }
+  } catch(e) { /* 静默失败，不影响其他功能 */ }
+}
+
+function fmtX2c(val) {
+  const n = Number(val||0);
+  if (n >= 1000000) return (n/1000000).toFixed(2) + 'M';
+  if (n >= 1000) return (n/1000).toFixed(1) + 'K';
+  return n.toFixed(0);
+}
