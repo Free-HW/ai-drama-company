@@ -422,7 +422,6 @@
               epLastLogId[ep.run_id] = Number(logs[logs.length-1].id || 0);
             }
           }
-          appendLine('system', 'SYSTEM', '[恢复] 已跳过历史日志,从当前进度继续显示', 'system');
         }
 
         // 刷新剧集列表
@@ -659,20 +658,18 @@
     const scriptRunId = data.scriptRunId;
     const isScriptGenerating = typeof data.project?.status === 'string'
       && (data.project.status === 'generating' || data.project.status.startsWith('generating:'));
-    if (isScriptGenerating && scriptRunId && !activeRunId && !pollTimer) {
+    if (isScriptGenerating && scriptRunId && !activeRunId && !pollTimer && !window._scriptPollStarted) {
+      window._scriptPollStarted = true;
       const tip = document.getElementById('oclawTip');
-      if (tip) {
-        const prog = data.project.status.includes(':') ? ` ${data.project.status.split(':')[1]}` : '';
-        tip.textContent = `剧本生成中${prog},控制台实时显示进度...`;
-      }
       if (termLog) termLog.innerHTML = '';
       lastLogId = 0;
-      appendLine('system', 'SYSTEM', '正在匹配风格、准备生成剧本,请稍候...', 'script');
+      appendLine('system', 'SYSTEM', '正在匹配风格、AI智能命名、准备生成剧本，请稍候...', 'script');
       // 等剧本生成完成,然后自动切换到全剧流水线轮询
       await pollRunStatus(scriptRunId, tip, null);
+      window._scriptPollStarted = false;
       // 剧本完成后,自动跟踪后续流水线进度
       if (selectedStoryProjectUuid) {
-        appendLine('system', 'SYSTEM', '━━ 剧本生成完成,自动跟踪视频制作进度 ━━', 'system');
+        appendLine('system', 'SYSTEM', '━━ 剧本生成完成，自动跟踪视频制作进度 ━━', 'system');
         if (window._pipelineLoopTimer) { clearInterval(window._pipelineLoopTimer); window._pipelineLoopTimer = null; }
         pollPipeline(selectedStoryProjectUuid);
       }

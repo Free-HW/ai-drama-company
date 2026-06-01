@@ -74,7 +74,8 @@ class DramaAgent {
 
     // Step 3: 生成角色（含跨剧集一致性）
     emit('agent-b', 'AGENT-B', '[CastingAgent] 生成角色...', 'casting');
-    await this.giggle.generateCharacters(projectId);
+    const genCharResp = await this.giggle.generateCharacters(projectId);
+    emit('agent-b', 'AGENT-B', `[CastingAgent] generateCharacters 请求: projectId=${projectId} 响应: ${JSON.stringify(genCharResp?.data || genCharResp).slice(0, 200)}`, 'casting');
 
     const characterDone = await poll({
       fn: () => this.giggle.listCharacters(projectId),
@@ -84,7 +85,7 @@ class DramaAgent {
         if (list.length === 0) return true;
         return list.every((x) => isDone(x.generating_status) || isFailed(x.generating_status));
       },
-      isFailed: () => false, // 单个角色失败不整体失败
+      isFailed: () => false,
       intervalMs: interval,
       timeoutMs: timeout,
       onTick: (r) => {
@@ -93,6 +94,7 @@ class DramaAgent {
       },
     });
     const characterList = characterDone.data?.character_list || [];
+    emit('agent-b', 'AGENT-B', `[CastingAgent] listCharacters 最终响应: count=${characterList.length} 数据: ${JSON.stringify(characterList.map(c=>({name:c.name,status:c.generating_status,asset:c.asset_id}))).slice(0,300)}`, 'casting');
 
     // 角色一致性处理：同名复用 story_characters 里的，新角色入库
     if (input.db && input.storyProjectUuid) {
