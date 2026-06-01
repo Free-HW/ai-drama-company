@@ -186,7 +186,22 @@ async function main() {
     try { db.prepare('UPDATE runs SET status=?, updated_at=? WHERE run_id=?').run('completed', new Date().toISOString(), scriptRunId); } catch (_) {}
   }
 
-  log('system', 'SYSTEM', '[完成] 全部 ' + written + '/' + total + ' 集剧本已生成', 'script');
+  log('system', 'SYSTEM', '[完成] 全部 ' + written + '/' + total + ' 集剧本已生成，准备自动开始视频制作...', 'script');
+
+  // 剧本生成完成后自动触发全剧流水线（fire-and-forget，不等待结果）
+  const PORT = process.env.PORT || 3000;
+  const autoRunUrl = 'http://localhost:' + PORT + '/api/agent/projects/' + projectUuid + '/auto-run';
+  fetch(autoRunUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+    .then(r => r.json())
+    .then(json => {
+      if (json.ok) {
+        log('system', 'SYSTEM', '[自动流水线] auto-run 已触发，pipelineRunId=' + (json.data?.pipelineRunId || ''), 'script');
+      } else {
+        log('system', 'SYSTEM', '[自动流水线] auto-run 触发失败: ' + (json.error || ''), 'script');
+      }
+    })
+    .catch(e => log('system', 'SYSTEM', '[自动流水线] auto-run 请求异常: ' + e.message, 'script'));
+
   process.exit(0);
 }
 

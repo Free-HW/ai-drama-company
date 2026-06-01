@@ -336,12 +336,18 @@ app.post('/api/agent/projects', async (req, res) => {
     const project0 = await getStoryProject(db, projectUuid);
     res.json({ ok: true, data: { project: project0, episodes: [], generating: true } });
 
-    // 异步：先匹配风格再生成剧本
+    // 异步：matchStyleId 和 triggerScriptGeneration 并行，互不阻塞
     (async () => {
-      const styleId = await matchStyleId(idea.trim());
-      db.prepare('UPDATE story_projects SET style_id=?, updated_at=? WHERE project_uuid=?')
-        .run(styleId, new Date().toISOString(), projectUuid);
+      // 立即写一条日志，前端控制台马上有反馈
+      const initRunId = db.prepare('SELECT script_run_id FROM story_projects WHERE project_uuid=?').get(projectUuid)?.script_run_id;
+      // 先触发剧本生成（不等风格匹配），让前端立刻看到进度
       triggerScriptGeneration(projectUuid, idea.trim(), Number(episodeCount || 1));
+      // 并行匹配风格，完成后更新 DB
+      matchStyleId(idea.trim()).then(styleId => {
+        db.prepare('UPDATE story_projects SET style_id=?, updated_at=? WHERE project_uuid=?')
+          .run(styleId, new Date().toISOString(), projectUuid);
+        console.log('[StyleMatch] style_id updated to', styleId, 'for', projectUuid);
+      }).catch(e => console.warn('[StyleMatch] failed:', e.message));
     })();
     return; // already responded
   } catch (e) {

@@ -473,14 +473,16 @@
       box.innerHTML = `project_uuid: ${projectUuid}<br>characters: ${chars.length}<br>active mappings: ${mappings.length}<br>${mappingRows || 'no mappings yet'}`;
     }
 
-    // 如果项目正在生成剧本，显示等待状态并轮询
-    if (data.project?.status === 'generating' && eps.length === 0) {
+    // 如果项目正在生成剧本（且还没有集数据），显示等待提示
+    const isGeneratingStatus = typeof data.project?.status === 'string'
+      && (data.project.status === 'generating' || data.project.status.startsWith('generating:'));
+    if (isGeneratingStatus && eps.length === 0) {
+      const prog = data.project.status.includes(':') ? data.project.status.split(':')[1] : '';
       wall.innerHTML = `<div class="agent-card idle" style="grid-column:1/-1;text-align:center;padding:40px;">
-        <div class="agent-task" style="font-size:14px;">⏳ AI 正在生成剧本，请稍候...</div>
-        <div style="margin-top:8px;font-size:11px;opacity:.5;">通常需要 30-60 秒</div>
+        <div class="agent-task" style="font-size:14px;">⏳ AI 正在生成剧本${prog ? ' (' + prog + ')' : ''}...</div>
+        <div style="margin-top:8px;font-size:11px;opacity:.5;">通常需要 1-2 分钟</div>
       </div>`;
-      setTimeout(() => renderStoryEpisodes(projectUuid), 5000);
-      return;
+      // 不 return，继续执行下面的控制台轮询逻辑
     }
 
     wall.innerHTML = eps.map((ep, idx) => {
@@ -526,13 +528,20 @@
     window._currentProjectUuid = projectUuid;
 
     // 剧本生成中：用 scriptRunId 接续控制台日志轮询
+    // status='generating'（无进度）或 'generating:N/M'（有进度）都立刻轮询
     const scriptRunId = data.scriptRunId;
-    const isScriptGenerating = typeof data.project?.status === 'string' && data.project.status.startsWith('generating:');
+    const isScriptGenerating = typeof data.project?.status === 'string'
+      && (data.project.status === 'generating' || data.project.status.startsWith('generating:'));
     if (isScriptGenerating && scriptRunId && !activeRunId && !pollTimer) {
       const tip = document.getElementById('oclawTip');
-      if (tip) tip.textContent = `剧本生成中 ${data.project.status.split(':')[1]}，控制台实时显示进度...`;
+      if (tip) {
+        const prog = data.project.status.includes(':') ? ` ${data.project.status.split(':')[1]}` : '';
+        tip.textContent = `剧本生成中${prog}，控制台实时显示进度...`;
+      }
       if (termLog) termLog.innerHTML = '';
       lastLogId = 0;
+      // 若 scriptRunId 还没有日志，先显示一条初始提示
+      appendLine('system', 'SYSTEM', '正在匹配风格、准备生成剧本，请稍候...', 'script');
       await pollRunStatus(scriptRunId, tip, null);
     }
 
