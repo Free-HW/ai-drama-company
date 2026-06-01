@@ -235,6 +235,18 @@ class DramaAgent {
 
     out.steps.push({ step: 'storyboard.image', shotCount: shots.length, shots });
     emit('agent-c', 'AGENT-C', `[StoryboardAgent] 分镜图完成: ${shots.length} 张`, 'storyboard');
+
+    // 取第一个完成的分镜图作为集封面图，立即写入 DB
+    const coverShot = shots.find(s => isDone(s.generating_status) && (s.thumbnail_url || s.signed_url));
+    if (coverShot && input.db && input.storyProjectUuid && input.episodeNo) {
+      const coverUrl = coverShot.thumbnail_url || coverShot.signed_url || '';
+      try {
+        input.db.prepare('UPDATE project_episodes SET cover_url=?,updated_at=? WHERE project_uuid=? AND episode_no=?')
+          .run(coverUrl, new Date().toISOString(), input.storyProjectUuid, input.episodeNo);
+        emit('agent-c', 'AGENT-C', `[StoryboardAgent] 封面图已更新: ${coverUrl.slice(0,60)}...`, 'storyboard');
+      } catch (_) {}
+    }
+
     out.status = 'phase1_completed';
     return out;
   }
