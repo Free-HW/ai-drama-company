@@ -424,6 +424,18 @@
           }
         }
 
+        // 项目级终态：直接停止，不管集的状态
+        if (TERMINAL_STATUSES.has(pStatus)) {
+          clearInterval(loopTimer);
+          window._pipelineLoopTimer = null;
+          const ok = pStatus === 'completed';
+          if (tip) tip.textContent = ok ? '🎉 全剧制作完成!' : '制作已停止 (' + pStatus + ')';
+          appendLine('system', 'SYSTEM', `━━━ 全剧流水线结束 [${pStatus}] ━━━`, 'system');
+          await renderStoryEpisodes(projectUuid);
+          await refreshStoryWorkspace();
+          return;
+        }
+
         // 刷新剧集列表
         if (selectedStoryProjectUuid === projectUuid) {
           renderStoryEpisodes(projectUuid).catch(() => {});
