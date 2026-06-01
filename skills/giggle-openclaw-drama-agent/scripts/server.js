@@ -325,21 +325,25 @@ async function aiGenerateProjectName(idea) {
   }
 }
 
-// 从 idea 文本中解析集数：支持阿拉伯数字和中文数字，支持"一集/单集"等表达，未匹配返回默认值 10
+// 集数配置
+const EPISODE_COUNT_DEFAULT = 10;  // 用户未指定集数时的默认值
+const EPISODE_COUNT_MAX = 60;       // 最大允许集数（超出自动截断为60）
+
+// 从 idea 文本中解析集数：支持阿拉伯数字和中文数字，支持"一集/单集"等表达，未匹配返回默认值
 function parseEpisodeCountFromIdea(idea) {
   const str = String(idea);
   // 阿拉伯数字：10集、共10集、10期、10话
   const m1 = str.match(/(?:共|全|约|只|制作|做|拍)?\s*(\d+)\s*(?:集|期|话|章|个视频|条视频|个短片)/);
-  if (m1) return Math.min(Math.max(parseInt(m1[1]), 1), 50);
+  if (m1) return Math.min(Math.max(parseInt(m1[1]), 1), EPISODE_COUNT_MAX);
   // 中文数字映射
   const cnMap = { '一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9,'十':10,
-                  '十一':11,'十二':12,'十五':15,'二十':20,'三十':30,'五十':50 };
+                  '十一':11,'十二':12,'十五':15,'二十':20,'三十':30,'五十':50,'六十':60 };
   const m2 = str.match(/(?:共|全|约|只|制作|做|拍)?\s*([一二三四五六七八九十]{1,3})\s*(?:集|期|话|章|个视频|条视频|个短片)/);
-  if (m2 && cnMap[m2[1]]) return cnMap[m2[1]];
+  if (m2 && cnMap[m2[1]]) return Math.min(cnMap[m2[1]], EPISODE_COUNT_MAX);
   // 单集/一集特殊匹配
   if (/制作一集|一集短|单集|只有一集|一个视频|一条视频|一个短片/.test(str)) return 1;
-  // 默认 10 集
-  return 10;
+  // 默认集数
+  return EPISODE_COUNT_DEFAULT;
 }
 
 app.post('/api/agent/projects', async (req, res) => {
@@ -357,7 +361,7 @@ app.post('/api/agent/projects', async (req, res) => {
       if (VALID_DURATIONS.includes(seconds)) parsedDuration = seconds;
     }
     // 解析集数：前端传则用，否则从 idea 解析，默认 10 集
-    const finalEpisodeCount = episodeCount ? Math.min(Math.max(Number(episodeCount), 1), 50)
+    const finalEpisodeCount = episodeCount ? Math.min(Math.max(Number(episodeCount), 1), EPISODE_COUNT_MAX)
                                             : parseEpisodeCountFromIdea(idea);
     // 项目名：用户输入优先，否则 AI 智能命名
     const finalName = (name && name.trim()) ? name.trim()
