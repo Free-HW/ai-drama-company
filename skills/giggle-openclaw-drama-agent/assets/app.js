@@ -458,6 +458,18 @@
               appendLine(l.tagClass, l.tagText, l.payload, l.stage);
               epLastLogId[runId] = Math.max(epLastLogId[runId] || 0, Number(l.id || 0));
             });
+            // 若该集 run 已完成，再拉一次确保尾部日志不遗漏
+            const runStatus = sJson.run?.status;
+            if (runStatus === 'completed' || runStatus === 'failed' || runStatus === 'phase1_done') {
+              const sResp2 = await fetch(`/api/agent/status/${runId}?since_id=${epLastLogId[runId] || 0}`);
+              const sJson2 = await sResp2.json().catch(() => ({}));
+              if (sJson2.ok) {
+                (sJson2.logs || []).forEach(l => {
+                  appendLine(l.tagClass, l.tagText, l.payload, l.stage);
+                  epLastLogId[runId] = Math.max(epLastLogId[runId] || 0, Number(l.id || 0));
+                });
+              }
+            }
           }
         } else {
           // 没有 running 集：检查是否有 phase1_done 在等 Phase2
@@ -471,9 +483,24 @@
             consecutiveIdle++;
           }
 
-          // 项目最终完成
+          // 项目最终完成：先把所有集的剩余日志全部拉完，再停止
           if (TERMINAL_STATUSES.has(pStatus)) {
             clearInterval(loopTimer);
+            // 最后一轮：把每一集的日志拉到最新，确保 100% 和视频地址都显示出来
+            for (const ep2 of eps) {
+              if (!ep2.run_id) continue;
+              const since2 = epLastLogId[ep2.run_id] || 0;
+              try {
+                const fr = await fetch(`/api/agent/status/${ep2.run_id}?since_id=${since2}`);
+                const fj = await fr.json().catch(() => ({}));
+                if (fj.ok) {
+                  (fj.logs || []).forEach(l => {
+                    appendLine(l.tagClass, l.tagText, l.payload, l.stage);
+                    epLastLogId[ep2.run_id] = Math.max(epLastLogId[ep2.run_id] || 0, Number(l.id || 0));
+                  });
+                }
+              } catch(_) {}
+            }
             const ok = pStatus === 'completed';
             if (tip) tip.textContent = ok ? '🎉 全剧制作完成！' : '全剧制作结束（部分集失败）';
             appendLine('system', 'SYSTEM', `━━━ 全剧流水线结束 [${pStatus}] ━━━`, 'system');
