@@ -828,10 +828,12 @@ async function runAutoRun(projectUuid) {
     pipelineEmit('system', 'SYSTEM', `[Pipeline] Phase 1 全部完成，开始 Phase 2`, 'system');
 
     // ── Phase 2：串行跑完所有集的视频+导出 ──
-    for (const ep of episodes) {
+    // 重新从 DB 读取最新 episodes（Phase1 已写入新的 run_id 和 giggle_project_id）
+    const updatedEpisodes = await listProjectEpisodesByUuid(db, projectUuid);
+    for (const ep of updatedEpisodes) {
       pipelineEmit('system', 'SYSTEM', `[Pipeline] Phase 2 - EP${ep.episode_no} 开始`, 'system');
 
-      // 复用 Phase 1 的 runId 和 giggle_project_id
+      // 从最新 DB 读取 Phase1 写入的 runId 和 giggle_project_id
       const runId = ep.run_id;
       const giggleProjectId = ep.giggle_project_id;
       if (!runId || !giggleProjectId) {
