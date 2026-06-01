@@ -6,7 +6,6 @@
     .oclaw-input { flex: 1; min-width: 320px; background: #0c0c10; color: var(--text); border: 1px solid var(--line-2); padding: 10px 12px; font-family: var(--sans); }
     .oclaw-btn { background: var(--gold); color: #000; border: none; padding: 10px 14px; font-family: var(--mono); font-size: 12px; cursor: pointer; }
     .oclaw-btn:disabled { opacity: .5; cursor: not-allowed; }
-    .oclaw-tip { margin-top: 8px; color: var(--text-3); font-family: var(--mono); font-size: 11px; }
     .oclaw-db { margin-top: 10px; border: 1px dashed var(--line-2); padding: 10px; font-family: var(--mono); font-size: 11px; color: var(--text-2); }
     .project-card.active { border-color: var(--gold)!important; }
     .x2c-dynamic { border:1px solid var(--line); background:var(--bg-1); padding:12px; margin-bottom:12px; font-family:var(--mono); font-size:12px; color:var(--text-2); }
@@ -974,7 +973,7 @@
         <button id="oclawRun" class="oclaw-btn">创建项目</button>
         <button id="oclawRefresh" class="oclaw-btn" style="background:#222;color:#ddd;">刷新项目数据</button>
       </div>
-      <div class="oclaw-tip" id="oclawTip">左侧项目列表 · 中间分集生产按钮 · 映射关系展示在下方</div>
+
       <div class="oclaw-db" id="oclawDb">本地数据库快照: 暂无数据</div>
     `;
     terminalHeader.insertAdjacentElement('afterend', panel);
