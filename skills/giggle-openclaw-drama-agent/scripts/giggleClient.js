@@ -76,6 +76,13 @@ class GiggleClient {
     return this.request('POST', '/api/v1/character-library/upload-local-image', { body: input });
   }
 
+  // 删除角色库中的角色（parent_id = library_character_id）
+  deleteCharacterFromLibrary(libraryCharacterId) {
+    return this.request('POST', '/api/v1/character-library/delete', {
+      body: { parent_id: Number(libraryCharacterId) },
+    });
+  }
+
   // 7. 生成分镜列表
   autoGenerateStoryboard(projectId) {
     return this.request('POST', '/api/v1/storyboard-shots/auto-generate', {

@@ -735,6 +735,172 @@ app.get('/api/agent/projects/:projectUuid/shots', async (req, res) => {
   }
 });
 
+// 全剧自动流水线：先串行跑完全部 Phase1（分镜图），再串行跑完全部 Phase2（视频+导出）
+// 全部完成后清理角色库
+app.post('/api/agent/projects/:projectUuid/auto-run', async (req, res) => {
+  const { projectUuid } = req.params;
+  try {
+    const project = await getStoryProject(db, projectUuid);
+    if (!project) return res.status(404).json({ ok: false, error: 'project not found' });
+
+    const episodes = await listProjectEpisodesByUuid(db, projectUuid);
+    if (!episodes.length) return res.status(400).json({ ok: false, error: 'no episodes found' });
+
+    // 为整个流水线创建一个顶层 run（用于状态展示）
+    const pipelineRunId = require('crypto').randomUUID();
+    await createRun(db, {
+      runId: pipelineRunId,
+      idea: project.idea,
+      projectName: `${project.name} 全剧自动流水线`,
+    });
+    const pipelineEmit = (tagClass, tagText, payload, stage) => {
+      addLog(db, { runId: pipelineRunId, stage, tagClass, tagText, payload }).catch(() => {});
+    };
+
+    // 更新项目状态
+    await setStoryProjectStatus(db, { projectUuid, status: 'running' });
+    await updateProjectEpisode(db, { projectUuid, status: 'running' });
+
+    const giggle = new GiggleClient({
+      baseUrl: process.env.GIGGLE_BASE_URL,
+      apiKey: process.env.GIGGLE_API_KEY,
+      authMode: process.env.GIGGLE_AUTH_MODE || 'x-auth',
+    });
+    const agent = new DramaAgent({
+      giggle,
+      pollIntervalMs: Number(process.env.POLL_INTERVAL_MS || 5000),
+      pollTimeoutMs: Number(process.env.POLL_TIMEOUT_MS || 3600000),
+    });
+
+    const styleId = project.style_id || req.body?.styleId || 146;
+    const videoDuration = project.video_duration || req.body?.videoDuration || 60;
+
+    // ── Phase 1：串行跑完所有集的分镜图 ──
+    pipelineEmit('system', 'SYSTEM', `[Pipeline] Phase 1 开始：生成分镜图（${episodes.length} 集）`, 'system');
+    for (const ep of episodes) {
+      pipelineEmit('system', 'SYSTEM', `[Pipeline] Phase 1 - EP${ep.episode_no} 开始`, 'system');
+
+      // 清理旧数据
+      if (ep.run_id) {
+        for (const tbl of ['run_logs', 'scripts', 'storyboards', 'characters']) {
+          db.prepare(`DELETE FROM ${tbl} WHERE run_id=?`).run(ep.run_id);
+        }
+        db.prepare('DELETE FROM runs WHERE run_id=?').run(ep.run_id);
+      }
+      const runId = require('crypto').randomUUID();
+      await createRun(db, { runId, idea: project.idea, projectName: `${project.name}-EP${String(ep.episode_no).padStart(2, '0')}` });
+      await updateProjectEpisode(db, { projectUuid, episodeNo: ep.episode_no, status: 'running', runId });
+      const emit = (tagClass, tagText, payload, stage) => {
+        addLog(db, { runId, stage, tagClass, tagText, payload }).catch(() => {});
+      };
+
+      try {
+        const phase1Result = await agent.runPhase1({
+          idea: ep.script_text || ep.outline || project.idea,
+          projectName: `${project.name}-EP${String(ep.episode_no).padStart(2, '0')}`,
+          aspect: project.aspect || '16:9',
+          language: project.language || 'zh-CN',
+          videoDuration,
+          styleId,
+          videoModel: 'seedance-2.0-pro',
+          secondModel: 'seedance-2.0-pro',
+          shotDuration: 5,
+          db,
+          storyProjectUuid: projectUuid,
+          runId,
+          episodeNo: ep.episode_no,
+        }, emit);
+        pipelineEmit('system', 'SYSTEM', `[Pipeline] EP${ep.episode_no} Phase 1 完成（giggle_project_id=${phase1Result.projectId}）`, 'system');
+      } catch (e) {
+        pipelineEmit('system', 'SYSTEM', `[Pipeline] EP${ep.episode_no} Phase 1 失败: ${e.message}`, 'system');
+        await updateProjectEpisode(db, { projectUuid, episodeNo: ep.episode_no, status: 'failed', runId });
+      }
+    }
+    pipelineEmit('system', 'SYSTEM', `[Pipeline] Phase 1 全部完成，开始 Phase 2`, 'system');
+
+    // ── Phase 2：串行跑完所有集的视频+导出 ──
+    for (const ep of episodes) {
+      pipelineEmit('system', 'SYSTEM', `[Pipeline] Phase 2 - EP${ep.episode_no} 开始`, 'system');
+
+      // 复用 Phase 1 的 runId 和 giggle_project_id
+      const runId = ep.run_id;
+      const giggleProjectId = ep.giggle_project_id;
+      if (!runId || !giggleProjectId) {
+        pipelineEmit('system', 'SYSTEM', `[Pipeline] EP${ep.episode_no} 缺少 runId 或 giggle_project_id，跳过`, 'system');
+        continue;
+      }
+      const emit = (tagClass, tagText, payload, stage) => {
+        addLog(db, { runId, stage, tagClass, tagText, payload }).catch(() => {});
+      };
+
+      try {
+        const phase1Result = { projectId: giggleProjectId, steps: [] };
+        const phase2Result = await agent.runPhase2(
+          {
+            idea: ep.script_text || ep.outline || project.idea,
+            projectName: `${project.name}-EP${String(ep.episode_no).padStart(2, '0')}`,
+            aspect: project.aspect || '16:9',
+            language: project.language || 'zh-CN',
+            videoDuration,
+            styleId,
+            videoModel: 'seedance-2.0-pro',
+            secondModel: 'seedance-2.0-pro',
+            db,
+            storyProjectUuid: projectUuid,
+            runId,
+            episodeNo: ep.episode_no,
+          },
+          emit,
+          phase1Result,
+        );
+
+        // 写入导出结果
+        const exportUrl = phase2Result.export?.videoDownloadUrl || phase2Result.export?.videoSignedUrl || '';
+        const thumbMatch = exportUrl.match(/(https:\/\/assets\.giggle\.pro\/public\/ai_director\/[^\/]+\/[^.?]+)\.mp4/);
+        const coverUrl = thumbMatch ? thumbMatch[1] + '.thumb.jpg' : '';
+        await finishRun(db, { runId, status: 'completed', exportUrl });
+        await updateProjectEpisode(db, {
+          projectUuid, episodeNo: ep.episode_no, status: 'completed',
+          runId, giggleProjectId, exportUrl, coverUrl,
+        });
+        await addLog(db, { runId, stage: 'distribute', tagClass: 'system', tagText: 'SYSTEM', payload: `Final video: ${exportUrl}` });
+        pipelineEmit('system', 'SYSTEM', `[Pipeline] EP${ep.episode_no} Phase 2 完成`, 'system');
+      } catch (e) {
+        pipelineEmit('system', 'SYSTEM', `[Pipeline] EP${ep.episode_no} Phase 2 失败: ${e.message}`, 'system');
+        await finishRun(db, { runId, status: 'failed', exportUrl: '' });
+        await updateProjectEpisode(db, { projectUuid, episodeNo: ep.episode_no, status: 'failed', runId });
+      }
+    }
+
+    // ── 全剧完成：清理角色库 ──
+    pipelineEmit('system', 'SYSTEM', `[Pipeline] 全剧完成，清理角色库...`, 'system');
+    const chars = db.prepare('SELECT library_character_id FROM story_characters WHERE story_project_uuid=?').all(projectUuid);
+    const deleted = [];
+    for (const c of chars) {
+      if (!c.library_character_id) continue;
+      try {
+        const r = await giggle.deleteCharacterFromLibrary(c.library_character_id);
+        pipelineEmit('agent-b', 'AGENT-B', `[CastingAgent] 删除角色 library_character_id=${c.library_character_id} -> ${JSON.stringify(r?.data || r)}`, 'casting');
+        deleted.push(c.library_character_id);
+      } catch (e) {
+        pipelineEmit('agent-b', 'AGENT-B', `[CastingAgent] 删除角色失败 library_character_id=${c.library_character_id}: ${e.message}`, 'casting');
+      }
+    }
+    // 从本地 story_characters 表删除（可选，保留记录也可以）
+
+    // 更新项目状态
+    const finalEps = await listProjectEpisodesByUuid(db, projectUuid);
+    const hasFailed = finalEps.some((e) => e.status === 'failed');
+    await setStoryProjectStatus(db, { projectUuid, status: hasFailed ? 'partial_failed' : 'completed' });
+    await finishRun(db, { runId: pipelineRunId, status: 'completed', exportUrl: '' });
+    pipelineEmit('system', 'SYSTEM', `[Pipeline] 全剧流水线完成，已删除 ${deleted.length} 个角色`, 'system');
+
+    res.json({ ok: true, data: { pipelineRunId, phase1Count: episodes.length, deletedCharacters: deleted } });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 const port = Number(process.env.PORT || 3000);
 app.listen(port, () => {
   console.log(`OpenClaw agent dashboard running at http://localhost:${port}`);
