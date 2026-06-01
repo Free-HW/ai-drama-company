@@ -218,12 +218,19 @@ class DramaAgent {
       for (const shot of failedImages) {
         try {
           const imageList = (shot.reference_img_list || []).map((r) => r.asset_id).filter(Boolean);
-          await this.giggle.generateImageForShot({
-            project_id: projectId, parent_id: Number(shot.id),
-            generate_type: 'Img2Img', image_list: imageList,
-            prompt: shot.prompt || '', generating_count: 1, model: 'seedream45',
-          });
-          emit('agent-c', 'AGENT-C', `[StoryboardAgent] 重新生成分镜图 shot_id=${shot.id}`, 'storyboard');
+          // parent_id 是分镜逻辑ID，不是图片实例ID；无参考图时用 Txt2Img
+          const genType = imageList.length > 0 ? 'Img2Img' : 'Txt2Img';
+          const payload = {
+            project_id: projectId,
+            parent_id: Number(shot.parent_id || shot.id),
+            generate_type: genType,
+            prompt: shot.prompt || '',
+            generating_count: 1,
+            model: 'seedream45',
+          };
+          if (imageList.length > 0) payload.image_list = imageList;
+          await this.giggle.generateImageForShot(payload);
+          emit('agent-c', 'AGENT-C', `[StoryboardAgent] 重新生成分镜图 parent_id=${shot.parent_id || shot.id} type=${genType}`, 'storyboard');
         } catch (e) {
           emit('agent-c', 'AGENT-C', `[StoryboardAgent] 分镜图重试失败 shot_id=${shot.id}: ${e.message}`, 'storyboard');
         }
