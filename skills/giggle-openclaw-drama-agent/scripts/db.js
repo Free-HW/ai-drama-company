@@ -36,6 +36,10 @@ async function initSchema(db) {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       project_uuid TEXT UNIQUE,
       name TEXT, idea TEXT, language TEXT, aspect TEXT, style TEXT, status TEXT,
+      episode_count INTEGER DEFAULT 1,
+      script_run_id TEXT,
+      style_id INTEGER DEFAULT 146,
+      video_duration INTEGER DEFAULT 60,
       created_at TEXT, updated_at TEXT
     );
     CREATE TABLE IF NOT EXISTS project_bibles (
@@ -168,10 +172,10 @@ async function getRunLogsSince(db, runId, sinceId=0, limit=200) {
   return all(db, `SELECT * FROM run_logs WHERE run_id=? AND id>? ORDER BY id ASC LIMIT ?`, [runId, Number(sinceId||0), Number(limit||200)]);
 }
 
-async function createStoryProject(db, { projectUuid, name, idea, language, aspect, style, episodeCount }) {
+async function createStoryProject(db, { projectUuid, name, idea, language, aspect, style, episodeCount, styleId, videoDuration }) {
   const now = new Date().toISOString();
-  await run(db, `INSERT INTO story_projects (project_uuid,name,idea,language,aspect,style,episode_count,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
-    [projectUuid, name||'', idea||'', language||'zh-CN', aspect||'16:9', style||'', Number(episodeCount||1), 'draft', now, now]);
+  await run(db, `INSERT INTO story_projects (project_uuid,name,idea,language,aspect,style,episode_count,style_id,video_duration,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [projectUuid, name||'', idea||'', language||'zh-CN', aspect||'16:9', style||'', Number(episodeCount||1), Number(styleId||146), Number(videoDuration||60), 'draft', now, now]);
 }
 
 async function upsertProjectBible(db, { projectUuid, worldSetting, tone, styleRules, relationshipNotes, rawJson }) {

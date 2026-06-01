@@ -318,9 +318,10 @@ app.post('/api/agent/projects', async (req, res) => {
       aspect: aspect || '16:9',
       style: style || '',
       episodeCount: Number(episodeCount || 1),
+      styleId: 146,        // 创建时先用默认值，后续 matchStyleId 会更新
+      videoDuration: parsedDuration,
     });
-    db.prepare('UPDATE story_projects SET video_duration=?, updated_at=? WHERE project_uuid=?')
-      .run(parsedDuration, new Date().toISOString(), projectUuid);
+    // 移除旧的单独 UPDATE video_duration（已合并到 createStoryProject）
     await upsertProjectBible(db, {
       projectUuid,
       worldSetting: bible?.worldSetting || '',

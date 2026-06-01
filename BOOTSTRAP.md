@@ -176,12 +176,15 @@ POST /api/agent/projects
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
+| GET | `/health` | 健康检查 |
 | POST | `/api/agent/projects` | 创建项目，异步生成剧本 |
 | GET | `/api/agent/projects` | 列出所有项目 |
-| GET | `/api/agent/projects/:uuid` | 获取项目详情（含剧本） |
-| POST | `/api/agent/projects/:uuid/episodes/:no/run` | 触发单集视频制作 |
-| GET | `/api/agent/status/:runId` | 查询制作进度 |
-| GET | `/health` | 健康检查 |
+| GET | `/api/agent/projects/:uuid` | 获取项目详情（含集列表） |
+| POST | `/api/agent/projects/:uuid/auto-run` | **全剧自动流水线**（推荐） |
+| POST | `/api/agent/projects/:uuid/episodes/:no/run` | 单集手动触发 |
+| POST | `/api/agent/projects/:uuid/regenerate-script` | 重新生成剧本 |
+| GET | `/api/agent/projects/:uuid/shots?episode_no=N` | 获取某集分镜（实时从 Giggle 拉取） |
+| GET | `/api/agent/status/:runId?since_id=N` | 查询制作进度 + 增量日志 |
 
 ---
 
@@ -193,9 +196,12 @@ POST /api/agent/projects
 
 ---
 
-## 后续开发计划
+## 当前功能状态
 
-- [ ] 接入 Giggle 正确的视频制作接口（由开发者逐步提供）
-- [ ] 支持多语言剧本生成
-- [ ] 剧本编辑功能
-- [ ] 批量集数生产
+- [x] LLM 智能生成多集剧本（逐集写 DB，实时进度）
+- [x] 全自动流水线（Phase1 串行分镜图 → Phase2 串行视频导出）
+- [x] 角色跨集一致性（story_characters 表复用）
+- [x] 全剧风格统一（LLM 智能匹配 Giggle 7 种风格）
+- [x] 失败重试（分镜图/分镜视频均自动重试）
+- [x] 全剧完成后清理角色库
+- [x] 前端实时控制台 + 剧集详情弹窗
