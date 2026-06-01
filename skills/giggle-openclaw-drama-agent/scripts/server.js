@@ -300,17 +300,24 @@ function buildLocalScriptFallback(idea, total) {
 // 用 AI 从 idea 中智能提取项目名称
 async function aiGenerateProjectName(idea) {
   try {
-    const { default: OpenAI } = await import('openai');
-    const client = new OpenAI({ baseURL: process.env.OPENAI_BASE_URL, apiKey: process.env.OPENAI_API_KEY });
-    const resp = await client.chat.completions.create({
-      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-      max_tokens: 30,
-      messages: [
-        { role: 'system', content: '你是一个短剧命名专家。根据用户描述，提炼出一个简洁有力的短剧名称，4-10个汉字，不加书名号，不加标点，只输出名称本身。' },
-        { role: 'user', content: idea },
-      ],
+    const GATEWAY = process.env.OPENCLAW_GATEWAY_URL || 'http://localhost:18789';
+    const PASS = process.env.OPENCLAW_GATEWAY_PASSWORD || '';
+    const resp = await fetch(`${GATEWAY}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(PASS ? { Authorization: `Bearer ${PASS}` } : {}) },
+      body: JSON.stringify({
+        model: 'default',
+        max_tokens: 30,
+        messages: [
+          { role: 'system', content: '你是一个短剧命名专家。根据用户描述，提炼出一个简洁有力的短剧名称，4-10个汉字，不加书名号，不加标点，只输出名称本身。' },
+          { role: 'user', content: idea },
+        ],
+      }),
+      signal: AbortSignal.timeout(15000),
     });
-    const name = (resp.choices[0]?.message?.content || '').trim().replace(/[《》「」【】""''\n]/g, '');
+    const data = await resp.json();
+    const name = (data.choices?.[0]?.message?.content || '').trim().replace(/[《》「」【】""''\n]/g, '');
+    console.log('[AIName] generated:', name);
     return name || null;
   } catch (e) {
     console.warn('[AIName] failed:', e.message);
@@ -318,10 +325,21 @@ async function aiGenerateProjectName(idea) {
   }
 }
 
-// 从 idea 文本中解析集数，匹配"10集""共10集""10期"等，未匹配返回默认值 10
+// 从 idea 文本中解析集数：支持阿拉伯数字和中文数字，支持"一集/单集"等表达，未匹配返回默认值 10
 function parseEpisodeCountFromIdea(idea) {
-  const m = String(idea).match(/(?:共|全|约)?\s*(\d+)\s*(?:集|期|话|章)/);
-  return m ? Math.min(Math.max(parseInt(m[1]), 1), 50) : 10;
+  const str = String(idea);
+  // 阿拉伯数字：10集、共10集、10期、10话
+  const m1 = str.match(/(?:共|全|约|只|制作|做|拍)?\s*(\d+)\s*(?:集|期|话|章|个视频|条视频|个短片)/);
+  if (m1) return Math.min(Math.max(parseInt(m1[1]), 1), 50);
+  // 中文数字映射
+  const cnMap = { '一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9,'十':10,
+                  '十一':11,'十二':12,'十五':15,'二十':20,'三十':30,'五十':50 };
+  const m2 = str.match(/(?:共|全|约|只|制作|做|拍)?\s*([一二三四五六七八九十]{1,3})\s*(?:集|期|话|章|个视频|条视频|个短片)/);
+  if (m2 && cnMap[m2[1]]) return cnMap[m2[1]];
+  // 单集/一集特殊匹配
+  if (/制作一集|一集短|单集|只有一集|一个视频|一条视频|一个短片/.test(str)) return 1;
+  // 默认 10 集
+  return 10;
 }
 
 app.post('/api/agent/projects', async (req, res) => {
