@@ -254,18 +254,25 @@ class DramaAgent {
           emit('agent-c', 'AGENT-C', `[StoryboardAgent] 分镜图重试失败 shot_id=${shot.id}: ${e.message}`, 'storyboard');
         }
       }
-      const retryIds = new Set(failedImages.map((s) => Number(s.id)));
+      // 重试后 Giggle 会生成新的 shot 实例（新 id），不能用旧 id 过滤
+      // 改为轮询全部 shot，等 data.status=success 或全部到终态
       const retryDone = await poll({
         fn: () => this.giggle.listShots(projectId),
         isDone: (r) => {
-          const list = (r.data?.shot_list || []).filter((s) => retryIds.has(Number(s.id)));
-          return list.length > 0 && list.every((x) => isDone(x.generating_status));
+          const overallStatus = r.data?.status;
+          if (overallStatus && isDone(overallStatus)) return true;
+          const list = r.data?.shot_list || [];
+          if (list.length === 0) return false;
+          return list.every((x) => isDone(x.generating_status) || isFailed(x.generating_status));
         },
         isFailed: () => false,
         intervalMs: interval, timeoutMs: timeout,
         onTick: (r) => {
-          const list = (r.data?.shot_list || []).filter((s) => retryIds.has(Number(s.id)));
-          emit('agent-c', 'AGENT-C', `[StoryboardAgent] 分镜图重试进度 ${list.filter((x) => isDone(x.generating_status)).length}/${retryIds.size}`, 'storyboard');
+          const list = r.data?.shot_list || [];
+          const overallStatus = r.data?.status || '';
+          const done = list.filter((x) => isDone(x.generating_status)).length;
+          const total = list.length;
+          emit('agent-c', 'AGENT-C', `[StoryboardAgent] 分镜图重试进度 ${done}/${total}(overall:${overallStatus})`, 'storyboard');
         },
       });
       shots = retryDone.data?.shot_list || shots;
