@@ -948,19 +948,26 @@ async function runAutoRun(projectUuid) {
       pipelineEmit('system', 'SYSTEM', `[Pipeline] Phase 2 - EP${ep.episode_no} 开始`, 'system');
 
       // 从最新 DB 读取 Phase1 写入的 runId 和 giggle_project_id
-      const runId = ep.run_id;
+      let runId = ep.run_id;
       const giggleProjectId = ep.giggle_project_id;
-      // Phase2 开始:把 episode 和 run 状态改回 running,前端重新触发轮询
-      if (runId) {
-        db.prepare('UPDATE project_episodes SET status=?,updated_at=? WHERE project_uuid=? AND episode_no=?')
-          .run('running', new Date().toISOString(), projectUuid, ep.episode_no);
-        db.prepare('UPDATE runs SET status=?,updated_at=? WHERE run_id=?')
-          .run('running', new Date().toISOString(), runId);
-      }
-      if (!runId || !giggleProjectId) {
-        pipelineEmit('system', 'SYSTEM', `[Pipeline] EP${ep.episode_no} 缺少 runId 或 giggle_project_id,跳过`, 'system');
+      // giggle_project_id 是 Phase2 的必要条件，没有则跳过
+      if (!giggleProjectId) {
+        pipelineEmit('system', 'SYSTEM', `[Pipeline] EP${ep.episode_no} 缺少 giggle_project_id，跳过`, 'system');
         continue;
       }
+      // run_id 为空时自动创建（避免因手动修复导致 run_id=NULL 而跳过）
+      if (!runId) {
+        runId = require('crypto').randomUUID();
+        await createRun(db, { runId, idea: project.idea, projectName: `${project.name}-EP${String(ep.episode_no).padStart(2,'0')}` });
+        db.prepare('UPDATE project_episodes SET run_id=?,updated_at=? WHERE project_uuid=? AND episode_no=?')
+          .run(runId, new Date().toISOString(), projectUuid, ep.episode_no);
+        pipelineEmit('system', 'SYSTEM', `[Pipeline] EP${ep.episode_no} 自动创建 runId`, 'system');
+      }
+      // Phase2 开始:把 episode 和 run 状态改回 running
+      db.prepare('UPDATE project_episodes SET status=?,updated_at=? WHERE project_uuid=? AND episode_no=?')
+        .run('running', new Date().toISOString(), projectUuid, ep.episode_no);
+      db.prepare('UPDATE runs SET status=?,updated_at=? WHERE run_id=?')
+        .run('running', new Date().toISOString(), runId);
       const emit = (tagClass, tagText, payload, stage) => {
         addLog(db, { runId, stage, tagClass, tagText, payload }).catch(() => {});
       };
