@@ -618,6 +618,30 @@
     });
   }
 
+  // 手动发布到 X2C（全部视频完成后才可调用）
+  async function manualPublishToX2C(projectUuid) {
+    const btn = document.getElementById('manual-publish-btn');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ 发布中...'; }
+    try {
+      const resp = await fetch(`/api/agent/projects/${projectUuid}/publish-x2c`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const json = await resp.json();
+      if (json.ok) {
+        appendLine('system', 'SYSTEM', `[X2C] 手动发布成功：${json.message || ''}`, 'system');
+        await renderStoryEpisodes(projectUuid);
+        await refreshStoryWorkspace();
+      } else {
+        appendLine('system', 'SYSTEM', `[X2C] 手动发布失败：${json.error || ''}`, 'system');
+        if (btn) { btn.disabled = false; btn.textContent = '📤 发布到 X2C'; }
+      }
+    } catch (e) {
+      appendLine('system', 'SYSTEM', `[X2C] 手动发布异常：${e.message}`, 'system');
+      if (btn) { btn.disabled = false; btn.textContent = '📤 发布到 X2C'; }
+    }
+  }
+
   async function runEpisode(projectUuid, episodeNo) {
     const runBtn = document.getElementById(`run-ep-${episodeNo}`);
     const tip = document.getElementById('oclawTip');
@@ -653,8 +677,31 @@
     if (centerSub) {
       const completed = eps.filter((x) => x.status === 'completed').length;
       const running = eps.filter((x) => x.status === 'running').length;
-      const planned = eps.filter((x) => x.status === 'planned' || x.status === 'draft').length;
+      const planned = eps.filter((x) => x.status === 'planned' || x.status === 'draft' || x.status === 'scripted').length;
       centerSub.textContent = `${completed} completed · ${running} running · ${planned} planned · episode mode`;
+    }
+    // 需求2+3：右上角发布按钮 - 全部视频完成且未发布时才可点击
+    const centerHead = document.querySelector('.center-head');
+    const existPublishBtn = document.getElementById('manual-publish-btn');
+    if (existPublishBtn) existPublishBtn.remove();
+    if (centerHead && eps.length > 0) {
+      const proj = data.project || {};
+      const allEpsDone = eps.every(ep => ep.status === 'completed' || ep.status === 'failed' || ep.status === 'partial_failed');
+      const hasAnyVideo = eps.some(ep => ep.export_url);
+      const alreadyPublished = !!proj.x2c_project_id;
+      const canPublish = allEpsDone && hasAnyVideo;
+      const btn = document.createElement('button');
+      btn.id = 'manual-publish-btn';
+      btn.className = 'oclaw-btn';
+      btn.style.cssText = 'font-size:12px;padding:6px 14px;' + (canPublish && !alreadyPublished ? 'background:rgba(80,200,120,.18);border-color:rgba(80,200,120,.5);color:#50c878;' : 'opacity:.4;cursor:not-allowed;');
+      btn.textContent = alreadyPublished ? `✅ 已发布 X2C` : canPublish ? '📤 发布到 X2C' : '📤 发布到 X2C（制作完成后可用）';
+      btn.disabled = !canPublish || alreadyPublished;
+      btn.title = !canPublish ? '需要全部集制作完成（含有失败集时允许发布已完成集）' : alreadyPublished ? '已发布' : '发布到 X2C 平台';
+      btn.addEventListener('click', () => manualPublishToX2C(projectUuid));
+      // 插到 filter-row 前面
+      const filterRow = centerHead.querySelector('.filter-row');
+      if (filterRow) centerHead.insertBefore(btn, filterRow);
+      else centerHead.appendChild(btn);
     }
 
     const box = document.getElementById('oclawDb');
@@ -675,12 +722,20 @@
       // 不 return,继续执行下面的控制台轮询逻辑
     }
 
+    // 判断全部视频是否已生成完毕（含失败集，但所有完成集都有 export_url）
+    const allVideosDone = eps.length > 0 && eps.every(ep =>
+      ep.status === 'completed' || ep.status === 'failed' || ep.status === 'partial_failed'
+    );
+    const allCompleted = eps.length > 0 && eps.every(ep => ep.status === 'completed' && ep.export_url);
+    const hasFailed = eps.some(ep => ep.status === 'failed' || ep.status === 'partial_failed');
+
     wall.innerHTML = eps.map((ep, idx) => {
+      const isFailed = ep.status === 'failed' || ep.status === 'partial_failed';
       const st = ep.status === 'completed'
         ? { cls: 'published', label: 'COMPLETED', pct: 100 }
         : ep.status === 'running'
           ? { cls: 'rendering', label: 'RUNNING', pct: 55 }
-          : ep.status === 'failed' || ep.status === 'partial_failed'
+          : isFailed
             ? { cls: 'queued', label: 'FAILED', pct: 10 }
             : { cls: 'queued', label: 'PLANNED', pct: 8 };
       // 封面图:优先 cover_url,否则从 export_url 推导 .thumb.jpg
@@ -690,6 +745,10 @@
       const thumbStyle = thumbUrl
         ? `background-image:url('${thumbUrl}');background-size:cover;background-position:center;`
         : '';
+      // 需求1：正常情况隐藏生产按钮；需求2：失败集才显示生产按钮
+      const runBtn = isFailed
+        ? `<button id="run-ep-${ep.episode_no}" class="oclaw-btn" style="flex:1;font-size:11px;background:rgba(220,60,60,.15);border-color:rgba(220,60,60,.4);">↩ 重新生产</button>`
+        : ``;
       return `
         <div class="ep ep${(idx % 6) + 1}" data-ep-no="${ep.episode_no}" style="cursor:pointer;">
           <div class="ep-thumb" style="${thumbStyle}">
@@ -702,8 +761,8 @@
             <div class="ep-bar"><span style="width:${st.pct}%;"></span></div>
             <div class="ep-meta"><span>${ep.status || '-'}</span><span>${ep.export_url ? '✓ 视频' : '-'}</span></div>
             <div style="display:flex;gap:6px;margin-top:8px;">
-              <button onclick="showEpModal(event,${ep.episode_no})" class="oclaw-btn" style="flex:1;font-size:11px;background:rgba(232,179,57,.15);border-color:rgba(232,179,57,.4);">🎬 详情</button>
-              <button id="run-ep-${ep.episode_no}" class="oclaw-btn" style="flex:1;font-size:11px;" ${ep.status === 'running' ? 'disabled' : ''}>▶ 生产</button>
+              <button onclick="showEpModal(event,${ep.episode_no})" class="oclaw-btn" style="${runBtn ? 'flex:1;' : 'width:100%;'}font-size:11px;background:rgba(232,179,57,.15);border-color:rgba(232,179,57,.4);">🎬 详情</button>
+              ${runBtn}
             </div>
           </div>
         </div>

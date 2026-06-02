@@ -1048,11 +1048,16 @@ async function runAutoRun(projectUuid) {
       if (!project?.x2c_project_id) {
         pipelineEmit('system', 'SYSTEM', '[X2C] 开始自动发布到 X2C 平台...', 'system');
         try {
-          const episodesForPublish = finalEps.map(e => ({
-            episode_no: e.episode_no,
-            export_url: e.export_url || '',
-            cover_url: e.cover_url || '',
-          }));
+          // 需求3：按集数升序排列，只发布有 export_url 的集
+          const episodesForPublish = finalEps
+            .filter(e => e.export_url)
+            .sort((a, b) => a.episode_no - b.episode_no)
+            .map(e => ({
+              episode_no: e.episode_no,
+              export_url: e.export_url,
+              cover_url: e.cover_url || '',
+            }));
+          if (!episodesForPublish.length) throw new Error('没有可发布的视频');
           const result = await publishToX2C({
             projectName: project.name,
             idea: project.idea,
@@ -1116,6 +1121,45 @@ app.post('/api/x2c/sync', async (req, res) => {
   try {
     await syncX2cStatus();
     res.json({ ok: true, message: 'X2C 状态同步完成' });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// ── 手动发布到 X2C ──
+app.post('/api/agent/projects/:projectUuid/publish-x2c', async (req, res) => {
+  try {
+    const { projectUuid } = req.params;
+    const project = await getStoryProject(db, projectUuid);
+    if (!project) return res.status(404).json({ ok: false, error: 'project not found' });
+    if (project.x2c_project_id) return res.json({ ok: false, error: '已发布，请勿重复发布' });
+
+    const episodes = await listProjectEpisodesByUuid(db, projectUuid);
+    // 需求3：只发布有视频的集，按集数升序排列
+    const validEps = episodes
+      .filter(e => e.export_url)
+      .sort((a, b) => a.episode_no - b.episode_no);
+    if (!validEps.length) return res.status(400).json({ ok: false, error: '没有可发布的视频，请等待制作完成' });
+
+    // 需求3：必须等待全部集到终态才能发布
+    const allTerminal = episodes.every(e =>
+      e.status === 'completed' || e.status === 'failed' || e.status === 'partial_failed'
+    );
+    if (!allTerminal) return res.status(400).json({ ok: false, error: '还有集正在制作中，请等待全部完成后再发布' });
+
+    const episodesForPublish = validEps.map(e => ({
+      episode_no: e.episode_no,
+      export_url: e.export_url,
+      cover_url: e.cover_url || '',
+    }));
+    const result = await publishToX2C({
+      projectName: project.name,
+      idea: project.idea,
+      episodes: episodesForPublish,
+    });
+    db.prepare('UPDATE story_projects SET x2c_project_id=?,x2c_status=?,x2c_published_at=?,updated_at=? WHERE project_uuid=?')
+      .run(result.x2cProjectId, result.status, new Date().toISOString(), new Date().toISOString(), projectUuid);
+    res.json({ ok: true, message: `已发布 ${validEps.length} 集到 X2C，等待审核`, x2cProjectId: result.x2cProjectId });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
