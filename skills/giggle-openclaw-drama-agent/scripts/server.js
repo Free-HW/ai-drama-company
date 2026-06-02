@@ -567,10 +567,17 @@ app.post('/api/agent/projects/:projectUuid/episodes/:episodeNo/run', async (req,
         });
         await addLog(db, { runId, stage: 'distribute', tagClass: 'system', tagText: 'SYSTEM', payload: exportUrl ? `Final video: ${exportUrl}` : 'Final video exported.' });
 
+        // 单集完成时不在此决定项目整体状态（race condition：下一集可能还没设为 running）
+        // 整体状态由 runAutoRun 末尾统一设置；这里只确保还有 running 时不误设 completed
         const episodes = await listProjectEpisodesByUuid(db, projectUuid);
         const hasRunning = episodes.some((ep) => ep.status === 'running');
-        const hasFailed = episodes.some((ep) => ep.status === 'failed');
-        await setStoryProjectStatus(db, { projectUuid, status: hasRunning ? 'running' : hasFailed ? 'partial_failed' : 'completed' });
+        const hasFailed = episodes.some((ep) => ep.status === 'failed' || ep.status === 'partial_failed');
+        if (hasRunning) {
+          await setStoryProjectStatus(db, { projectUuid, status: 'running' });
+        } else if (hasFailed) {
+          await setStoryProjectStatus(db, { projectUuid, status: 'partial_failed' });
+        }
+        // 不在这里设 completed，runAutoRun 末尾会统一处理
       } catch (error) {
         await addLog(db, { runId, stage: 'distribute', tagClass: 'system', tagText: 'SYSTEM', payload: `Pipeline failed: ${error.message || 'agent failed'}` });
         await finishRun(db, { runId, status: 'failed', exportUrl: '' });

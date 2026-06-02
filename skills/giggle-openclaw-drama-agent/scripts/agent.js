@@ -380,17 +380,21 @@ class DramaAgent {
             project_id: projectId, model: 'seedance-2.0-pro', second_model: 'seedance-2.0-pro',
             shot_id: failed.map((s) => Number(s.id)),
           });
+          // 视频重试后 Giggle 可能创建新实例（新 id），不能用旧 id 过滤
+          // 等全部 shot 的 video_generating_status 都到终态即可
           await poll({
             fn: () => this.giggle.listShots(projectId),
             isDone: (r) => {
-              const list = (r.data?.shot_list || []).filter((s) => retryingIds.has(Number(s.id)));
-              return list.length > 0 && list.every((x) => isDone(x.video_generating_status) || isFailed(x.video_generating_status));
+              const list = r.data?.shot_list || [];
+              if (list.length === 0) return false;
+              return list.every((x) => isDone(x.video_generating_status) || isFailed(x.video_generating_status));
             },
             isFailed: () => false,
             intervalMs: interval, timeoutMs: timeout,
             onTick: (r) => {
-              const list = (r.data?.shot_list || []).filter((s) => retryingIds.has(Number(s.id)));
-              emit('agent-d', 'AGENT-D', `[VideoAgent] 重试分镜进度 ${list.filter((x) => isDone(x.video_generating_status)).length}/${retryingIds.size}`, 'render');
+              const list = r.data?.shot_list || [];
+              const done = list.filter((x) => isDone(x.video_generating_status)).length;
+              emit('agent-d', 'AGENT-D', `[VideoAgent] 重试分镜进度 ${done}/${list.length}`, 'render');
             },
           });
           retryingIds.clear();
