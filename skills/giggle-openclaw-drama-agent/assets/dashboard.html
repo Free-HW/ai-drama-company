@@ -87,10 +87,8 @@
   /* ============= MAIN GRID ============= */
   .main {
     display: grid; grid-template-columns: 320px 1fr 360px;
-    /* 固定在视口内，不随项目数量撑高页面 */
+    /* 固定高度：让三栏内部各自滚动，整体高度 = 视口高度 */
     height: 100vh;
-    position: sticky;
-    top: 0;
     overflow: hidden;
   }
   
@@ -146,14 +144,18 @@
   .cost-row.profit .v { color: var(--green); font-weight: 700; }
 
   /* ============= CENTER · PRODUCTION WALL ============= */
-  .pane-center { padding: 28px 28px; background: var(--bg); overflow-y: auto; height: 100%; display: flex; flex-direction: column; }
+  .pane-center {
+    padding: 28px 28px 0; background: var(--bg);
+    height: 100%; display: flex; flex-direction: column; overflow: hidden;
+  }
+  /* wall 区域独立滚动，center-head 固定在顶 */
+  .wall-scroll {
+    flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 28px;
+  }
   .center-head {
     display: flex; justify-content: space-between; align-items: flex-end;
     margin-bottom: 24px;
-    position: sticky; top: 0; z-index: 5;
-    background: var(--bg); padding-bottom: 2px;
-    /* 遮住滚动时漏出的卡片 */
-    box-shadow: 0 8px 16px -4px var(--bg);
+    flex-shrink: 0;  /* 不参与滚动区域，固定在 pane-center 顶部 */
   }
   .center-title { font-family: var(--display); font-size: 32px; font-style: italic; }
   .center-sub { font-family: var(--mono); font-size: 11px; color: var(--text-3); margin-top: 6px; }
@@ -1258,6 +1260,7 @@
       </div>
     </div>
 
+    <div class="wall-scroll">
     <div class="wall">
       
       <!-- EP 1 -->
@@ -1380,6 +1383,7 @@
       </div>
 
     </div>
+    </div><!-- /wall-scroll -->
   </main>
 
   <!-- RIGHT · CASH FLOW -->
