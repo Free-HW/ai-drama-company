@@ -52,28 +52,41 @@ async function matchCategory(idea) {
   const cats = await getCategories();
   if (!cats.length) throw new Error('No categories available');
   // 关键词映射
+  // 关键词优先级：越靠前优先级越高，匹配到第一个即停止
+  // 古装历史比玄幻优先（穿越到古代 = 古装，不是玄幻）
   const keywords = {
-    '玄幻': ['玄幻','仙侠','修仙','魔法','异能','穿越','重生'],
+    '古装': ['古装','历史','宫廷','皇宫','古代','朝代','大唐','皇帝','大秦','汉朝','宋朝','明朝','清朝','穿越到','穿越回','穿越成为','穿越大秦','穿越唐','穿越宋','穿越明','穿越清'],
+    '玄幻': ['玄幻','仙侠','修仙','魔法','异能','穿越','重生','修炼','灵气'],
     '都市': ['都市','职场','现代','霸总','总裁','逆袭','豪门','婚姻'],
-    '古装': ['古装','历史','宫廷','皇宫','古代','朝代','大唐','皇帝'],
     '悬疑': ['悬疑','惊悚','侦探','破案','谋杀','恐怖'],
     '爱情': ['爱情','甜宠','宠文','恋爱','婚恋','契约'],
     '科幻': ['科幻','末世','星际','机器人','未来'],
     '热门': [],
   };
-  const catNameMap = {
-    '玄幻': '玄幻异能', '都市': '都市复仇', '古装': '古装历史',
-    '悬疑': '悬疑惊悚', '爱情': '爱情甜宠', '科幻': '科幻末世', '热门': '热门综合',
+  // catNameMap：优先精确匹配，找不到时做模糊匹配（分类名改变也能对上）
+  const catNameCandidates = {
+    '玄幻': ['玄幻异能', '玄幻'],
+    '都市': ['都市复仇', '都市'],
+    '古装': ['仙侠古装', '古装历史', '古装'],
+    '悬疑': ['悬疑惊悚', '悬疑'],
+    '爱情': ['霸总甜宠', '爱情甜宠', '爱情'],
+    '科幻': ['科幻末世', '科幻'],
+    '热门': ['热门综合', '热门'],
   };
   for (const [key, words] of Object.entries(keywords)) {
     if (words.some(w => idea.includes(w))) {
-      const targetName = catNameMap[key];
-      const match = cats.find(c => c.name === targetName);
-      if (match) return match;
+      const candidates = catNameCandidates[key] || [];
+      for (const name of candidates) {
+        const match = cats.find(c => c.name === name);
+        if (match) return match;
+      }
+      // 模糊匹配：分类名包含 key 的第一个字
+      const fuzzy = cats.find(c => c.name.includes(candidates[0]?.slice(0,2) || key));
+      if (fuzzy) return fuzzy;
     }
   }
-  // 默认返回热门综合
-  return cats.find(c => c.name_key === 'generalMixed') || cats[0];
+  // 默认返回热门综合（兜底：name_key 或名字匹配）
+  return cats.find(c => c.name_key === 'generalMixed') || cats.find(c => c.name.includes('热门')) || cats[0];
 }
 
 /**
