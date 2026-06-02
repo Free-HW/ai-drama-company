@@ -149,8 +149,18 @@ class GiggleClient {
 
 async function poll({ fn, isDone, isFailed, intervalMs, timeoutMs, onTick }) {
   const start = Date.now();
+  let fnErrCount = 0;
   while (Date.now() - start < timeoutMs) {
-    const current = await fn();
+    let current;
+    try {
+      current = await fn();
+      fnErrCount = 0; // 成功后重置计数
+    } catch (e) {
+      fnErrCount++;
+      if (fnErrCount >= 3) throw e; // 连续 3 次失败才真正抛出
+      await sleep(intervalMs);
+      continue;
+    }
     if (onTick) onTick(current);
     if (isDone(current)) return current;
     if (isFailed && isFailed(current)) {

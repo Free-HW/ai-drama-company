@@ -904,6 +904,7 @@ async function runAutoRun(projectUuid) {
         pipelineEmit('system', 'SYSTEM', `[Pipeline] EP${ep.episode_no} Phase 1 失败: ${e.message}`, 'system');
         await finishRun(db, { runId, status: 'failed', exportUrl: '' });
         await updateProjectEpisode(db, { projectUuid, episodeNo: ep.episode_no, status: 'failed', runId });
+        continue; // Phase 1 失败直接跳过该集的 Phase 2
       }
     }
     pipelineEmit('system', 'SYSTEM', `[Pipeline] Phase 1 全部完成，开始 Phase 2`, 'system');

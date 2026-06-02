@@ -83,13 +83,12 @@ class DramaAgent {
     const characterDone = await poll({
       fn: () => this.giggle.listCharacters(projectId),
       isDone: (r) => {
-        // data.status 表示整体生成状态
+        // data.status 表示整体生成状态：success 才算完成
         const overallStatus = r.data?.status;
         if (overallStatus && isDone(overallStatus)) return true;
-        if (overallStatus && isFailed(overallStatus)) return true;
-        // 兜底：列表全部到终态也视为完成
+        // 兜底：列表有内容且全部到终态
         const list = r.data?.character_list || [];
-        if (list.length === 0) return false; // 等 Giggle 把角色数据推进来
+        if (list.length === 0) return false;
         return list.every((x) => isDone(x.generating_status) || isFailed(x.generating_status));
       },
       isFailed: () => false,
