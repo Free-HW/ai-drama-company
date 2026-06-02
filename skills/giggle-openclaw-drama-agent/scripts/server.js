@@ -34,7 +34,7 @@ const {
   upsertCharacterMapping,
   listCharacterMappings,
 } = require('./db');
-const { publishToX2C, getWalletBalance, listPublished } = require('./x2cPublish');
+const { publishToX2C, getWalletBalance, listPublished, queryPublished } = require('./x2cPublish');
 
 const app = express();
 app.use(cors());
@@ -1086,6 +1086,45 @@ app.get('/api/x2c/projects', async (req, res) => {
     res.status(500).json({ ok: false, error: e.message, data: {} });
   }
 });
+
+// ── X2C 状态手动同步（前端可调）──
+app.post('/api/x2c/sync', async (req, res) => {
+  try {
+    await syncX2cStatus();
+    res.json({ ok: true, message: 'X2C 状态同步完成' });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// ── X2C 审核状态同步（每 5 分钟查一次 processing 的项目）──
+async function syncX2cStatus() {
+  try {
+    const rows = db.prepare("SELECT project_uuid, x2c_project_id FROM story_projects WHERE x2c_project_id IS NOT NULL AND x2c_status='processing'").all();
+    if (!rows.length) return;
+    for (const row of rows) {
+      try {
+        const res = await queryPublished(row.x2c_project_id);
+        if (!res) continue;
+        // X2C 返回的 status 字段：已审核通过一般是 published/approved/active
+        const remoteStatus = String(res.status || res.video_status || '').toLowerCase();
+        if (!remoteStatus || remoteStatus === 'processing' || remoteStatus === 'pending_review' || remoteStatus === 'pending') continue;
+        // 状态有变化，更新本地 DB
+        const localStatus = remoteStatus.includes('publish') || remoteStatus.includes('active') || remoteStatus.includes('approv')
+          ? 'published' : remoteStatus.includes('fail') || remoteStatus.includes('reject') ? 'failed' : remoteStatus;
+        db.prepare('UPDATE story_projects SET x2c_status=?,updated_at=? WHERE project_uuid=?')
+          .run(localStatus, new Date().toISOString(), row.project_uuid);
+        console.log(`[X2C Sync] ${row.project_uuid} 状态更新: processing -> ${localStatus}`);
+      } catch (e) {
+        console.warn(`[X2C Sync] 查询失败 ${row.x2c_project_id}:`, e.message);
+      }
+    }
+  } catch (e) {
+    console.warn('[X2C Sync] 定时同步异常:', e.message);
+  }
+}
+// 启动后 30 秒开始第一次检查，此后每 5 分钟执行一次
+setTimeout(() => { syncX2cStatus(); setInterval(syncX2cStatus, 5 * 60 * 1000); }, 30000);
 
 const port = Number(process.env.PORT || 3000);
 app.listen(port, () => {
