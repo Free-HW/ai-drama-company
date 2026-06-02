@@ -96,12 +96,13 @@ class DramaAgent {
       fn: safeListCharacters,
       isDone: (r) => {
         const overallStatus = r.data?.status;
-        // success = 完成；failed = Giggle 生成失败，直接跳过（不阻塞流程）
-        if (overallStatus && (isDone(overallStatus) || isFailed(overallStatus))) return true;
-        // 兜底：列表有内容且全部到终态
-        const list = r.data?.character_list || [];
-        if (list.length === 0) return false;
-        return list.every((x) => isDone(x.generating_status) || isFailed(x.generating_status));
+        // 唯一可信的完成信号：data.status === 'success'（Giggle 官方标准）
+        // 不能依赖 character_list 每项都 completed 作为提前退出条件
+        // 因为 Giggle 可能先把列表推过来但 overall status 还在 running
+        if (isDone(overallStatus)) return true;
+        // Giggle 真正失败时跳过，避免无限等待
+        if (isFailed(overallStatus)) return true;
+        return false;
       },
       isFailed: () => false,
       intervalMs: interval,
