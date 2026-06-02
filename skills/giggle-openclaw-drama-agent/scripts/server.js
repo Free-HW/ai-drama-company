@@ -34,7 +34,7 @@ const {
   upsertCharacterMapping,
   listCharacterMappings,
 } = require('./db');
-const { publishToX2C, getWalletBalance, listPublished, queryPublished } = require('./x2cPublish');
+const { publishToX2C, getWalletBalance, listPublished, queryPublished, getVideoStats } = require('./x2cPublish');
 
 const app = express();
 app.use(cors());
@@ -1296,6 +1296,20 @@ app.post('/api/agent/projects/:projectUuid/publish-x2c', async (req, res) => {
     db.prepare('UPDATE story_projects SET x2c_project_id=?,x2c_status=?,x2c_published_at=?,updated_at=? WHERE project_uuid=?')
       .run(result.x2cProjectId, result.status, new Date().toISOString(), new Date().toISOString(), projectUuid);
     res.json({ ok: true, message: `已发布 ${validEps.length} 集到 X2C，等待审核`, x2cProjectId: result.x2cProjectId });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// ── X2C 分发统计（各平台链接 + 播放量）──
+app.get('/api/agent/projects/:projectUuid/video-stats', async (req, res) => {
+  try {
+    const { projectUuid } = req.params;
+    const project = await getStoryProject(db, projectUuid);
+    if (!project) return res.status(404).json({ ok: false, error: 'project not found' });
+    if (!project.x2c_project_id) return res.json({ ok: true, data: null, message: '项目尚未发布到 X2C' });
+    const stats = await getVideoStats(project.x2c_project_id);
+    res.json({ ok: true, data: stats[0] || null });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }

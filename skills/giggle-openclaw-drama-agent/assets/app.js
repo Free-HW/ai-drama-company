@@ -798,6 +798,7 @@
     window._currentChars = data.characters || [];
     window._currentShots = data.shots || [];
     window._currentProjectUuid = projectUuid;
+    window._currentX2cProjectId = data.project?.x2c_project_id || null;
 
     // 剧本生成中:用 scriptRunId 接续控制台日志轮询
     // status='generating'(无进度)或 'generating:N/M'(有进度)都立刻轮询
@@ -1154,6 +1155,38 @@
 
 
 // ── 剧集详情弹窗 ──────────────────────────────────────────────
+// 平台 icon 映射
+const PLATFORM_META = {
+  tiktok:    { icon: '🎵', label: 'TikTok',    color: '#69c9d0' },
+  youtube:   { icon: '▶️',  label: 'YouTube',   color: '#ff0000' },
+  instagram: { icon: '📸', label: 'Instagram', color: '#e1306c' },
+  twitter:   { icon: '𝕏',  label: 'Twitter/X', color: '#1da1f2' },
+  facebook:  { icon: '📘', label: 'Facebook',  color: '#1877f2' },
+};
+
+function buildDistHtml(epData) {
+  if (!epData) return '<div style="color:#5e5e66;font-size:12px;padding:8px 0;">该集暂无分发数据</div>';
+  const platforms = epData.platforms || {};
+  const keys = Object.keys(platforms);
+  if (!keys.length) return '<div style="color:#5e5e66;font-size:12px;padding:8px 0;">该集暂无分发数据</div>';
+  return `<div style="display:flex;flex-direction:column;gap:8px;">` +
+    keys.map(platform => {
+      const d = platforms[platform];
+      const meta = PLATFORM_META[platform] || { icon: '🔗', label: platform, color: '#e8b339' };
+      const statusColor = d.status === 'published' ? '#4ade80' : d.status === 'failed' ? '#f87171' : '#e8b339';
+      const statusLabel = d.status === 'published' ? 'LIVE' : d.status === 'scheduled' ? 'SCHEDULED' : d.status === 'failed' ? 'FAILED' : (d.status || 'PENDING').toUpperCase();
+      return `
+        <div style="display:flex;align-items:center;gap:10px;background:#111114;border:1px solid #1f1f24;border-left:3px solid ${meta.color};padding:10px 14px;border-radius:6px;">
+          <span style="font-size:16px;width:20px;text-align:center;">${meta.icon}</span>
+          <span style="font-family:monospace;font-size:12px;color:#c0c0c8;flex:1;">${meta.label}</span>
+          <span style="font-family:monospace;font-size:10px;color:${statusColor};background:${statusColor}22;padding:2px 8px;border-radius:3px;letter-spacing:1px;">${statusLabel}</span>
+          ${d.post_url
+            ? `<a href="${d.post_url}" target="_blank" style="font-family:monospace;font-size:10px;color:#e8b339;text-decoration:none;padding:4px 10px;border:1px solid rgba(232,179,57,.4);border-radius:3px;white-space:nowrap;">OPEN ↗</a>`
+            : `<span style="font-family:monospace;font-size:10px;color:#3a3a42;padding:4px 10px;border:1px solid #2a2a30;border-radius:3px;">NO LINK</span>`}
+        </div>`;
+    }).join('') + '</div>';
+}
+
 function showEpModal(e, epNo) {
   if (e) e.stopPropagation();
   const eps = window._currentEpisodes || [];
@@ -1267,6 +1300,14 @@ function showEpModal(e, epNo) {
             </div>`).join('')}
         </div>
         ${exportUrl ? `<div style="margin-top:16px;"><a href="${exportUrl}" target="_blank" style="display:inline-block;padding:10px 20px;background:#e8b339;color:#000;font-family:monospace;font-size:12px;font-weight:700;border-radius:4px;text-decoration:none;">⬇ 下载视频</a></div>` : ''}
+        <!-- 分发链接区域：懒加载，info tab 激活时填充 -->
+        <div id="ep-dist-section-${epNo}" style="margin-top:20px;">
+          <div style="font-family:monospace;font-size:12px;color:#5e5e66;margin-bottom:10px;letter-spacing:1px;display:flex;align-items:center;gap:8px;">
+            DISTRIBUTION LINKS
+            <span id="ep-dist-loading-${epNo}" style="font-size:10px;color:#5e5e66;">⠋ 加载中...</span>
+          </div>
+          <div id="ep-dist-body-${epNo}"></div>
+        </div>
       </div>
 
     </div>`;
@@ -1311,6 +1352,34 @@ function showEpModal(e, epNo) {
             </div>`;
         } catch(e) {
           if (shotsBody) shotsBody.innerHTML = `<div style="color:#f87171;font-size:12px;">加载失败: ${e.message}</div>`;
+        }
+      }
+
+      // 信息 Tab:懒加载分发链接
+      if (tab.dataset.panel === 'info' && !panel.dataset.distLoaded) {
+        panel.dataset.distLoaded = '1';
+        const distBody = document.getElementById(`ep-dist-body-${epNo}`);
+        const distLoading = document.getElementById(`ep-dist-loading-${epNo}`);
+        const x2cProjectId = window._currentX2cProjectId;
+        if (!x2cProjectId) {
+          if (distLoading) distLoading.textContent = '';
+          if (distBody) distBody.innerHTML = '<div style="color:#3a3a42;font-size:12px;font-family:monospace;">项目未发布到 X2C</div>';
+          return;
+        }
+        try {
+          const r = await fetch(`/api/agent/projects/${projectUuidForShots}/video-stats`);
+          const j = await r.json();
+          if (distLoading) distLoading.textContent = '';
+          if (!j.ok || !j.data) {
+            if (distBody) distBody.innerHTML = '<div style="color:#5e5e66;font-size:12px;font-family:monospace;">暂无分发数据</div>';
+            return;
+          }
+          // 找到当前集的数据（episode_index 从 1 开始）
+          const epData = (j.data.episodes || []).find(ep => ep.episode_index === epNo);
+          if (distBody) distBody.innerHTML = buildDistHtml(epData || null);
+        } catch(err) {
+          if (distLoading) distLoading.textContent = '';
+          if (distBody) distBody.innerHTML = `<div style="color:#f87171;font-size:12px;font-family:monospace;">加载失败: ${err.message}</div>`;
         }
       }
     });

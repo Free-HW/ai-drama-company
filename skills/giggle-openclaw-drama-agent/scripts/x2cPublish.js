@@ -153,4 +153,15 @@ async function publishToX2C({ projectName, idea, episodes }) {
   };
 }
 
-module.exports = { publishToX2C, getWalletBalance, listPublished, queryPublished, getCategories, matchCategory };
+/**
+ * 查询已发布项目的各平台分发数据（含每集链接和播放量）
+ * @param {string|string[]} projectIds - 单个或多个 X2C project_id
+ */
+async function getVideoStats(projectIds) {
+  const ids = Array.isArray(projectIds) ? projectIds : [projectIds];
+  if (!ids.length) return [];
+  const res = await x2cApi('video/stats', { published_project_ids: ids });
+  return res.data || [];
+}
+
+module.exports = { publishToX2C, getWalletBalance, listPublished, queryPublished, getCategories, matchCategory, getVideoStats };
