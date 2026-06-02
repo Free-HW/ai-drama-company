@@ -80,12 +80,22 @@ class DramaAgent {
     // 先等一下让 Giggle 把角色数据准备好（generateCharacters 是异步触发）
     await new Promise(r => setTimeout(r, 3000));
 
+    // listCharacters 可能因 Giggle 内部错误返回 code:500，用安全包装防止 throw
+    const safeListCharacters = async () => {
+      try {
+        return await this.giggle.listCharacters(projectId);
+      } catch (e) {
+        // Giggle 接口偶发失败时返回空结构，继续轮询
+        return { data: { status: 'pending', character_list: [] } };
+      }
+    };
+
     const characterDone = await poll({
-      fn: () => this.giggle.listCharacters(projectId),
+      fn: safeListCharacters,
       isDone: (r) => {
-        // data.status 表示整体生成状态：success 才算完成
         const overallStatus = r.data?.status;
-        if (overallStatus && isDone(overallStatus)) return true;
+        // success = 完成；failed = Giggle 生成失败，直接跳过（不阻塞流程）
+        if (overallStatus && (isDone(overallStatus) || isFailed(overallStatus))) return true;
         // 兜底：列表有内容且全部到终态
         const list = r.data?.character_list || [];
         if (list.length === 0) return false;
@@ -100,8 +110,13 @@ class DramaAgent {
         emit('agent-b', 'AGENT-B', `[CastingAgent] 角色生成中 ${list.filter((x) => isDone(x.generating_status)).length}/${list.length} (overall:${overallStatus})`, 'casting');
       },
     });
+    const overallCharStatus = characterDone.data?.status || '';
     const characterList = characterDone.data?.character_list || [];
-    emit('agent-b', 'AGENT-B', `[CastingAgent] listCharacters 最终响应: count=${characterList.length} 数据: ${JSON.stringify(characterList.map(c=>({name:c.name,status:c.generating_status,asset:c.asset_id}))).slice(0,300)}`, 'casting');
+    if (isFailed(overallCharStatus)) {
+      emit('agent-b', 'AGENT-B', `[CastingAgent] 角色生成失败 (overall:${overallCharStatus})，跳过角色步骤继续分镜`, 'casting');
+    } else {
+      emit('agent-b', 'AGENT-B', `[CastingAgent] 角色完成: count=${characterList.length}`, 'casting');
+    }
 
     // 角色一致性处理：同名复用 story_characters 里的，新角色入库
     if (input.db && input.storyProjectUuid) {
