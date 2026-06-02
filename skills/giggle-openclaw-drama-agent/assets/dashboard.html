@@ -27,7 +27,7 @@
     --mono: 'JetBrains Mono', ui-monospace, monospace;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { background: var(--bg); color: var(--text); font-family: var(--sans); -webkit-font-smoothing: antialiased; min-height: 100vh; }
+  html, body { background: var(--bg); color: var(--text); font-family: var(--sans); -webkit-font-smoothing: antialiased; min-height: 100vh; scroll-behavior: smooth; }
   ::selection { background: var(--gold); color: #000; }
   
   /* ============= TOP BAR ============= */
@@ -87,13 +87,24 @@
   /* ============= MAIN GRID ============= */
   .main {
     display: grid; grid-template-columns: 320px 1fr 360px;
-    min-height: calc(100vh - 320px);
+    /* 固定在视口内，不随项目数量撑高页面 */
+    height: 100vh;
+    position: sticky;
+    top: 0;
+    overflow: hidden;
   }
   
   /* ============= LEFT · AI TEAM ============= */
   .pane-left {
     border-right: 1px solid var(--line); padding: 28px 24px; background: var(--bg);
-    display: flex; flex-direction: column; gap: 20px; overflow: hidden;
+    display: flex; flex-direction: column; gap: 0;
+    height: 100%; overflow: hidden;
+  }
+  /* 左栏项目列表滚动容器（由 JS 动态写入） */
+  .pane-left > div[style*="overflow-y"] {
+    flex: 1; min-height: 0; overflow-y: auto;
+    padding-right: 4px;  /* 给滚动条留空间 */
+    gap: 12px; display: flex; flex-direction: column;
   }
   .pane-title {
     font-family: var(--mono); font-size: 10px; color: var(--text-3);
@@ -135,8 +146,15 @@
   .cost-row.profit .v { color: var(--green); font-weight: 700; }
 
   /* ============= CENTER · PRODUCTION WALL ============= */
-  .pane-center { padding: 28px 28px; background: var(--bg); overflow: hidden; }
-  .center-head { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 24px; }
+  .pane-center { padding: 28px 28px; background: var(--bg); overflow-y: auto; height: 100%; display: flex; flex-direction: column; }
+  .center-head {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    margin-bottom: 24px;
+    position: sticky; top: 0; z-index: 5;
+    background: var(--bg); padding-bottom: 2px;
+    /* 遮住滚动时漏出的卡片 */
+    box-shadow: 0 8px 16px -4px var(--bg);
+  }
   .center-title { font-family: var(--display); font-size: 32px; font-style: italic; }
   .center-sub { font-family: var(--mono); font-size: 11px; color: var(--text-3); margin-top: 6px; }
   .filter-row { display: none; }
@@ -144,7 +162,10 @@
   .filter-row button:last-child { border-right: none; }
   .filter-row button.active { background: var(--gold); color: #000; }
 
-  .wall { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .wall {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+    align-content: start;   /* 集少时不拉伸，集多时正常堆叠 */
+  }
   .ep {
     background: var(--bg-1); border: 1px solid var(--line); overflow: hidden;
     position: relative; aspect-ratio: 9/14; display: flex; flex-direction: column;
@@ -214,6 +235,7 @@
   .pane-right {
     border-left: 1px solid var(--line); padding: 28px 24px; background: var(--bg);
     display: flex; flex-direction: column; gap: 24px;
+    height: 100%; overflow-y: auto;
   }
   .cash-now {
     background: linear-gradient(180deg, var(--gold-soft) 0%, transparent 100%);

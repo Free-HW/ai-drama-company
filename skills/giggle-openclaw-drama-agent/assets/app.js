@@ -600,14 +600,39 @@
     }).join('');
 
     leftPane.innerHTML = `
-      <div class="pane-title">
+      <div class="pane-title" style="margin-bottom:14px;flex-shrink:0;">
         <span>Story Projects · ${storyProjects.length}</span>
         <span class="pane-title-tag">EP MODE</span>
       </div>
-      <div style="overflow-y:auto;flex:1;min-height:0;">
+      <div style="flex-shrink:0;margin-bottom:10px;position:relative;">
+        <input id="proj-search" type="text" placeholder="搜索项目…"
+          style="width:100%;background:#111114;border:1px solid #1f1f24;color:#f2f2f2;
+                 font-family:var(--mono);font-size:11px;padding:7px 10px 7px 28px;
+                 outline:none;transition:border-color .2s;"
+          onfocus="this.style.borderColor='rgba(232,179,57,.5)'"
+          onblur="this.style.borderColor='#1f1f24'"
+        />
+        <span style="position:absolute;left:9px;top:50%;transform:translateY(-50%);
+                     font-size:11px;color:#5e5e66;pointer-events:none;">⌕</span>
+      </div>
+      <div id="proj-list" style="overflow-y:auto;flex:1;min-height:0;display:flex;flex-direction:column;gap:10px;padding-right:2px;">
         ${cards || '<div class="agent-card idle"><div class="agent-task">暂无项目数据</div></div>'}
       </div>
     `;
+
+    // 搜索过滤（纯前端，不触发接口）
+    const searchInput = document.getElementById('proj-search');
+    const projList = document.getElementById('proj-list');
+    if (searchInput) {
+      searchInput.addEventListener('input', () => {
+        const q = searchInput.value.trim().toLowerCase();
+        projList.querySelectorAll('.project-card').forEach(card => {
+          const name = (card.querySelector('.agent-name')?.textContent || '').toLowerCase();
+          const idea = (card.querySelector('.agent-task')?.textContent || '').toLowerCase();
+          card.style.display = (!q || name.includes(q) || idea.includes(q)) ? '' : 'none';
+        });
+      });
+    }
 
     leftPane.querySelectorAll('.project-card').forEach((el) => {
       el.addEventListener('click', async () => {
