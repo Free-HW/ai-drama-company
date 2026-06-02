@@ -185,28 +185,30 @@ class DramaAgent {
       },
     });
     emit('agent-c', 'AGENT-C', '[StoryboardAgent] 分镜列表就绪，开始生成分镜图...', 'storyboard');
-    await this.giggle.autoGenerateImages(projectId, 'seedream45');
+    const imgResp = await this.giggle.autoGenerateImages(projectId, 'seedream45');
+    emit('agent-c', 'AGENT-C', `[StoryboardAgent] autoGenerateImages 响应: ${JSON.stringify(imgResp?.data || imgResp).slice(0, 200)}`, 'storyboard');
+    // 等 Giggle 把图片生成任务调度起来（异步触发）
+    await new Promise(r => setTimeout(r, 5000));
 
     const shotsDone = await poll({
       fn: () => this.giggle.listShots(projectId),
       isDone: (r) => {
+        const overallStatus = r.data?.status;
+        if (overallStatus && (isDone(overallStatus) || isFailed(overallStatus))) return true;
         const list = r.data?.shot_list || [];
-        return list.length > 0 && list.every((x) => isDone(x.generating_status));
+        // 兜底：列表为空则等待，有内容则全部到终态才退出
+        if (list.length === 0) return false;
+        return list.every((x) => isDone(x.generating_status) || isFailed(x.generating_status));
       },
-      // 不整体失败，等全部完成（含失败）后在下面重试
       isFailed: () => false,
       intervalMs: interval,
       timeoutMs: timeout,
       onTick: (r) => {
         const list = r.data?.shot_list || [];
+        const overallStatus = r.data?.status || '';
         const done = list.filter((x) => isDone(x.generating_status)).length;
         const failed = list.filter((x) => isFailed(x.generating_status)).length;
-        emit('agent-c', 'AGENT-C', `[StoryboardAgent] 分镜图生成中 ${done}/${list.length}${failed ? ' (' + failed + ' 失败待重试)' : ''}`, 'storyboard');
-      },
-      // isDone 改为：所有分镜都到终态（完成或失败）才退出轮询
-      isDone: (r) => {
-        const list = r.data?.shot_list || [];
-        return list.length > 0 && list.every((x) => isDone(x.generating_status) || isFailed(x.generating_status));
+        emit('agent-c', 'AGENT-C', `[StoryboardAgent] 分镜图生成中 ${done}/${list.length}${overallStatus ? '(' + overallStatus + ')' : ''}${failed ? ' (' + failed + ' 失败)' : ''}`, 'storyboard');
       },
     });
     let shots = shotsDone.data?.shot_list || [];

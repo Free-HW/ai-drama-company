@@ -687,10 +687,11 @@
       await pollRunStatus(scriptRunId, tip, null);
       window._scriptPollStarted = false;
       // 剧本完成后,自动跟踪后续流水线进度
-      if (selectedStoryProjectUuid) {
+      const trackUuid = selectedStoryProjectUuid || projectUuid;
+      if (trackUuid) {
         appendLine('system', 'SYSTEM', '━━ 剧本生成完成，自动跟踪视频制作进度 ━━', 'system');
         if (window._pipelineLoopTimer) { clearInterval(window._pipelineLoopTimer); window._pipelineLoopTimer = null; }
-        pollPipeline(selectedStoryProjectUuid);
+        pollPipeline(trackUuid);
       }
     }
 
