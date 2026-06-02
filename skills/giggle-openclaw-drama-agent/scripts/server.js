@@ -952,6 +952,16 @@ async function runAutoRun(projectUuid) {
     // 重新从 DB 读取最新 episodes(Phase1 已写入新的 run_id 和 giggle_project_id)
     const updatedEpisodes = await listProjectEpisodesByUuid(db, projectUuid);
     for (const ep of updatedEpisodes) {
+      // 已完成的集跳过 Phase2，避免重跑时覆盖 completed 状态
+      if (ep.status === 'completed' && ep.export_url) {
+        pipelineEmit('system', 'SYSTEM', `[Pipeline] EP${ep.episode_no} Phase 2 已完成，跳过`, 'system');
+        continue;
+      }
+      // 失败的集跳过 Phase2（不自动重试，让用户手动触发）
+      if (ep.status === 'failed' || ep.status === 'partial_failed') {
+        pipelineEmit('system', 'SYSTEM', `[Pipeline] EP${ep.episode_no} 已失败，跳过 Phase 2`, 'system');
+        continue;
+      }
       pipelineEmit('system', 'SYSTEM', `[Pipeline] Phase 2 - EP${ep.episode_no} 开始`, 'system');
 
       // 从最新 DB 读取 Phase1 写入的 runId 和 giggle_project_id
@@ -1079,17 +1089,26 @@ async function runAutoRun(projectUuid) {
     return { pipelineRunId, phase1Count: episodes.length, deletedCharacters: deleted };
 }
 
+// 防重入：同一项目同时只允许一个 pipeline 在跑
+const _autoRunSet = new Set();
+
 // HTTP 接口:触发全剧流水线(立即返回,后台异步执行)
 app.post('/api/agent/projects/:projectUuid/auto-run', async (req, res) => {
   const { projectUuid } = req.params;
   try {
+    if (_autoRunSet.has(projectUuid)) {
+      return res.json({ ok: true, data: { projectUuid, status: 'already_running' } });
+    }
     const project = await getStoryProject(db, projectUuid);
     if (!project) return res.status(404).json({ ok: false, error: 'project not found' });
     const episodes = await listProjectEpisodesByUuid(db, projectUuid);
     if (!episodes.length) return res.status(400).json({ ok: false, error: 'no episodes found' });
     // 立即返回,后台异步执行
     res.json({ ok: true, data: { projectUuid, status: 'pipeline_started' } });
-    runAutoRun(projectUuid).catch(e => console.error('[AutoRun] failed:', e.message));
+    _autoRunSet.add(projectUuid);
+    runAutoRun(projectUuid)
+      .catch(e => console.error('[AutoRun] failed:', e.message))
+      .finally(() => _autoRunSet.delete(projectUuid));
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
