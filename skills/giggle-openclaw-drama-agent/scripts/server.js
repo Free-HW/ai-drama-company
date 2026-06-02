@@ -884,6 +884,16 @@ async function runAutoRun(projectUuid) {
     // ── Phase 1:串行跑完所有集的分镜图 ──
     pipelineEmit('system', 'SYSTEM', `[Pipeline] Phase 1 开始:生成分镜图(${episodes.length} 集)`, 'system');
     for (const ep of episodes) {
+      // 已完成 Phase1 或已完成的集直接跳过
+      if (ep.status === 'phase1_done' || ep.status === 'completed') {
+        pipelineEmit('system', 'SYSTEM', `[Pipeline] EP${ep.episode_no} Phase 1 已完成，跳过`, 'system');
+        continue;
+      }
+      // 正在运行的集（服务重启后恢复）也跳过 Phase1，让 Phase2 处理
+      if (ep.status === 'running' && ep.giggle_project_id) {
+        pipelineEmit('system', 'SYSTEM', `[Pipeline] EP${ep.episode_no} Phase 1 进行中（恢复），跳过重跑`, 'system');
+        continue;
+      }
       pipelineEmit('system', 'SYSTEM', `[Pipeline] Phase 1 - EP${ep.episode_no} 开始`, 'system');
 
       // 清理旧数据
