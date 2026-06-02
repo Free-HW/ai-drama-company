@@ -642,26 +642,28 @@
     }
   }
 
+  // 失败集重试：调用 retry 接口，从失败点继续，不走完整流程
   async function runEpisode(projectUuid, episodeNo) {
     const runBtn = document.getElementById(`run-ep-${episodeNo}`);
     const tip = document.getElementById('oclawTip');
-    if (runBtn) runBtn.disabled = true;
-    if (tip) tip.textContent = `EP${episodeNo} 已提交,开始执行...`;
-    if (termLog) termLog.innerHTML = '';
+    if (runBtn) { runBtn.disabled = true; runBtn.textContent = '⏳ 重试中...'; }
+    if (tip) tip.textContent = `EP${episodeNo} 重试已提交，正在从失败点继续...`;
     try {
-      const resp = await fetch(`/api/agent/projects/${projectUuid}/episodes/${episodeNo}/run`, {
+      const resp = await fetch(`/api/agent/projects/${projectUuid}/episodes/${episodeNo}/retry`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoDuration: 60, styleId: 1 }),
       });
       const data = await resp.json();
-      if (!resp.ok || !data.ok) throw new Error(data.error || 'run episode failed');
-      appendLine('system', 'SYSTEM', `EP${episodeNo}任务已提交,run_id: ${data.data.runId}`, 'script');
-      await pollRunStatus(data.data.runId, tip, runBtn);
+      if (!resp.ok || !data.ok) throw new Error(data.error || 'retry failed');
+      appendLine('system', 'SYSTEM', `[Retry] EP${episodeNo} 重试已提交，自动跟踪进度...`, 'system');
+      // 切换到该项目，开始轮询进度
+      selectedStoryProjectUuid = projectUuid;
+      await renderStoryEpisodes(projectUuid);
+      pollPipeline(projectUuid);
     } catch (e) {
-      appendLine('system', 'SYSTEM', `EP${episodeNo} 启动失败: ${e.message}`, 'distribute');
-      if (tip) tip.textContent = `EP${episodeNo} 启动失败。`;
-      if (runBtn) runBtn.disabled = false;
+      appendLine('system', 'SYSTEM', `EP${episodeNo} 重试失败: ${e.message}`, 'distribute');
+      if (tip) tip.textContent = `EP${episodeNo} 重试失败。`;
+      if (runBtn) { runBtn.disabled = false; runBtn.textContent = '↩ 重新生产'; }
     }
   }
 

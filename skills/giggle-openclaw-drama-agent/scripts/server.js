@@ -1145,6 +1145,123 @@ app.post('/api/x2c/sync', async (req, res) => {
   }
 });
 
+// ── 单集重试（从失败点继续，不走完整流程）──
+const _retryingSet = new Set(); // 防重入
+
+app.post('/api/agent/projects/:projectUuid/episodes/:episodeNo/retry', async (req, res) => {
+  const { projectUuid, episodeNo } = req.params;
+  const epNo = Number(episodeNo);
+  const retryKey = `${projectUuid}-${epNo}`;
+  try {
+    if (_retryingSet.has(retryKey)) {
+      return res.json({ ok: true, data: { status: 'already_retrying' } });
+    }
+    const project = await getStoryProject(db, projectUuid);
+    if (!project) return res.status(404).json({ ok: false, error: 'project not found' });
+    const ep = await getProjectEpisodeByNo(db, { projectUuid, episodeNo: epNo });
+    if (!ep) return res.status(404).json({ ok: false, error: 'episode not found' });
+    if (ep.status === 'completed' && ep.export_url) {
+      return res.status(400).json({ ok: false, error: '该集已完成，无需重试' });
+    }
+    if (ep.status === 'running') {
+      return res.status(400).json({ ok: false, error: '该集正在制作中' });
+    }
+
+    res.json({ ok: true, data: { projectUuid, episodeNo: epNo, status: 'retry_started' } });
+    _retryingSet.add(retryKey);
+
+    // 后台异步重试
+    (async () => {
+      try {
+        // 更新状态为 running
+        const runId = ep.run_id || require('crypto').randomUUID();
+        if (!ep.run_id) {
+          await createRun(db, { runId, idea: project.idea, projectName: `${project.name}-EP${String(epNo).padStart(2,'0')}` });
+          db.prepare('UPDATE project_episodes SET run_id=?,updated_at=? WHERE project_uuid=? AND episode_no=?')
+            .run(runId, new Date().toISOString(), projectUuid, epNo);
+        }
+        db.prepare('UPDATE project_episodes SET status=?,updated_at=? WHERE project_uuid=? AND episode_no=?')
+          .run('running', new Date().toISOString(), projectUuid, epNo);
+        db.prepare('UPDATE runs SET status=?,updated_at=? WHERE run_id=?')
+          .run('running', new Date().toISOString(), runId);
+        db.prepare('UPDATE story_projects SET status=?,updated_at=? WHERE project_uuid=?')
+          .run('running', new Date().toISOString(), projectUuid);
+
+        const emit = (tagClass, tagText, payload, stage) => {
+          addLog(db, { runId, stage, tagClass, tagText, payload }).catch(() => {});
+        };
+        emit('system', 'SYSTEM', `[Retry] EP${epNo} 开始重试`, 'system');
+
+        const giggle = new GiggleClient({
+          baseUrl: process.env.GIGGLE_BASE_URL,
+          apiKey: process.env.GIGGLE_API_KEY,
+          authMode: process.env.GIGGLE_AUTH_MODE || 'x-auth',
+        });
+        const agent = new DramaAgent({
+          giggle,
+          pollIntervalMs: Number(process.env.POLL_INTERVAL_MS || 5000),
+          pollTimeoutMs: Number(process.env.POLL_TIMEOUT_MS || 3600000),
+        });
+
+        const styleId = project.style_id || 146;
+        const videoDuration = project.video_duration || 60;
+
+        const retryResult = await agent.runRetry({
+          idea: ep.script_text || ep.outline || project.idea,
+          projectName: `${project.name}-EP${String(epNo).padStart(2,'0')}`,
+          aspect: project.aspect || '16:9',
+          language: project.language || 'zh-CN',
+          videoDuration,
+          styleId,
+          videoModel: 'seedance-2.0-pro',
+          secondModel: 'seedance-2.0-pro',
+          db,
+          storyProjectUuid: projectUuid,
+          runId,
+          episodeNo: epNo,
+          giggleProjectId: ep.giggle_project_id || null,
+        }, emit);
+
+        const exportUrl = retryResult.export?.videoDownloadUrl || retryResult.export?.videoSignedUrl || '';
+        const giggleProjectId = retryResult.projectId || ep.giggle_project_id || '';
+        const thumbMatch = exportUrl.match(/(https:\/\/assets\.giggle\.pro\/public\/ai_director\/[^\/]+\/[^.?]+)\.mp4/);
+        const coverUrl = thumbMatch ? thumbMatch[1] + '.thumb.jpg' : (ep.cover_url || '');
+
+        await finishRun(db, { runId, status: 'completed', exportUrl });
+        await updateProjectEpisode(db, { projectUuid, episodeNo: epNo, status: 'completed', runId, giggleProjectId, exportUrl, coverUrl });
+        emit('system', 'SYSTEM', `[Retry] EP${epNo} 重试成功，视频: ${exportUrl}`, 'system');
+
+        // 检查是否所有集都完成了，更新项目状态
+        const allEps = await listProjectEpisodesByUuid(db, projectUuid);
+        const hasFailed = allEps.some(e => e.status === 'failed');
+        const allDone = allEps.every(e => e.status === 'completed' || e.status === 'failed');
+        if (allDone) {
+          await setStoryProjectStatus(db, { projectUuid, status: hasFailed ? 'partial_failed' : 'completed' });
+        }
+      } catch (e) {
+        console.error(`[Retry] EP${epNo} failed:`, e.message);
+        const ep2 = await getProjectEpisodeByNo(db, { projectUuid, episodeNo: epNo });
+        if (ep2?.run_id) {
+          await finishRun(db, { runId: ep2.run_id, status: 'failed', exportUrl: '' });
+          addLog(db, { runId: ep2.run_id, stage: 'system', tagClass: 'system', tagText: 'SYSTEM', payload: `[Retry] EP${epNo} 重试失败: ${e.message}` }).catch(() => {});
+        }
+        db.prepare('UPDATE project_episodes SET status=?,updated_at=? WHERE project_uuid=? AND episode_no=?')
+          .run('failed', new Date().toISOString(), projectUuid, epNo);
+        // 检查其他集状态决定项目状态
+        const allEps = await listProjectEpisodesByUuid(db, projectUuid);
+        const allDone2 = allEps.every(ep => ep.status === 'completed' || ep.status === 'failed');
+        if (allDone2) {
+          await setStoryProjectStatus(db, { projectUuid, status: 'partial_failed' });
+        }
+      } finally {
+        _retryingSet.delete(retryKey);
+      }
+    })();
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 // ── 手动发布到 X2C ──
 app.post('/api/agent/projects/:projectUuid/publish-x2c', async (req, res) => {
   try {
