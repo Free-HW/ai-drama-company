@@ -1355,9 +1355,8 @@ function showEpModal(e, epNo) {
         }
       }
 
-      // 信息 Tab:懒加载分发链接
-      if (tab.dataset.panel === 'info' && !panel.dataset.distLoaded) {
-        panel.dataset.distLoaded = '1';
+      // 信息 Tab:每次进入都重新拉取（X2C 异步分发，每次看最新状态）
+      if (tab.dataset.panel === 'info') {
         const distBody = document.getElementById(`ep-dist-body-${epNo}`);
         const distLoading = document.getElementById(`ep-dist-loading-${epNo}`);
         const x2cProjectId = window._currentX2cProjectId;
