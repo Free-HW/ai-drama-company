@@ -290,11 +290,18 @@
     setStage(stage || 'script');
 
     const payloadStr = String(payload || '');
-    // 检测轮询类消息(含"中"/"中..."/"ing"/"轮询"/"等待"/"进度")
-    const isPoll = /中\s*\d|generating|pending|processing|等待|轮询|进度|in progress/.test(payloadStr);
+    // 检测轮询类消息：含进度数字、状态关键词、或固定轮询短语
+    const isPoll = /中\s*\d|generating|pending|processing|等待|轮询|进度|in progress/.test(payloadStr)
+      || /状态[:：]\s*(running|pending|processing|shaping|queueing|waiting)/i.test(payloadStr)
+      || /中\s*\(overall:|overall:\w+\)/.test(payloadStr)
+      || /扩写状态|生成状态|渲染状态|合成状态/.test(payloadStr);
 
-    // 对同一 tagClass+关键词 的轮询行复用(更新而非追加)
-    const pollKey = isPoll ? tagClass + ':' + payloadStr.replace(/\d+/g, '#') : null;
+    // pollKey：用 tagClass + 消息模板（数字/状态词归一化）做去重 key
+    const _normalized = payloadStr
+      .replace(/\d+\/\d+/g, '#/#')   // 进度 0/0 -> #/#
+      .replace(/\d+/g, '#')           // 其他数字
+      .replace(/[:：]\s*(running|pending|processing|shaping|queueing|waiting|success|completed|failed)/gi, ': STATUS');
+    const pollKey = isPoll ? tagClass + ':' + _normalized : null;
     if (pollKey && _pollLines.has(pollKey)) {
       const {el, baseEl} = _pollLines.get(pollKey);
       baseEl.textContent = payloadStr;
