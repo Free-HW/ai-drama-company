@@ -9,6 +9,11 @@
     .oclaw-db { display: none; }
     .project-card.active { border-color: var(--gold)!important; }
     .x2c-dynamic { border:1px solid var(--line); background:var(--bg-1); padding:12px; margin-bottom:12px; font-family:var(--mono); font-size:12px; color:var(--text-2); }
+    .x2c-badge { display:inline-block; padding:2px 8px; border-radius:3px; font-size:11px; font-family:var(--mono); font-weight:600; letter-spacing:.5px; }
+    .x2c-processing { background:rgba(232,179,57,.18); color:#e8b339; border:1px solid rgba(232,179,57,.4); }
+    .x2c-published  { background:rgba(80,200,120,.18); color:#50c878; border:1px solid rgba(80,200,120,.4); }
+    .x2c-failed     { background:rgba(220,60,60,.18);  color:#dc3c3c; border:1px solid rgba(220,60,60,.4);  }
+    .x2c-status-bar { display:flex; align-items:center; flex-wrap:wrap; gap:6px; padding:6px 8px; background:rgba(232,179,57,.05); border:1px solid rgba(232,179,57,.15); border-radius:4px; margin-bottom:6px; }
     .x2c-modal-grid { display:grid; grid-template-columns: 1.2fr .8fr; gap:14px; }
     .x2c-hero { display:grid; grid-template-columns: 1fr; gap:10px; margin-bottom:14px; }
     .x2c-cover { position:relative; border:1px solid var(--line); height:280px; background:#0d0f14; overflow:hidden; }
@@ -417,24 +422,43 @@
         const eps = json.data?.episodes || [];
         const pStatus = json.data?.project?.status || '';
 
-        // 首次轮询:初始化各集 lastLogId 为当前最新,不重放历史日志
+        // 首次轮询:初始化各集+pipeline lastLogId 为当前最新,不重放历史日志
+        const pipelineRunId = json.data?.pipelineRunId || '';
         if (!initialized) {
           initialized = true;
-          for (const ep of eps) {
-            if (!ep.run_id) continue;
-            const r = await fetch(`/api/agent/status/${ep.run_id}?since_id=0`);
+          const allRunIds = [...eps.filter(e=>e.run_id).map(e=>e.run_id)];
+          if (pipelineRunId) allRunIds.push(pipelineRunId);
+          for (const rid of allRunIds) {
+            const r = await fetch(`/api/agent/status/${rid}?since_id=0`);
             const j = await r.json().catch(() => ({}));
             const logs = j.logs || [];
             if (logs.length) {
-              epLastLogId[ep.run_id] = Number(logs[logs.length-1].id || 0);
+              epLastLogId[rid] = Number(logs[logs.length-1].id || 0);
             }
           }
+          appendLine('system', 'SYSTEM', '[恢复] 检测到流水线进行中，自动跟踪进度', 'system');
         }
 
-        // 项目级终态：直接停止，不管集的状态
+        // 项目级终态：补拉所有集最新日志后停止
         if (TERMINAL_STATUSES.has(pStatus)) {
           clearInterval(loopTimer);
           window._pipelineLoopTimer = null;
+          // 把每集+pipeline最新日志都拉一遍（含视频地址、X2C发布等），避免刷新后丢失
+          const flushRunIds = [...eps.filter(e=>e.run_id).map(e=>e.run_id)];
+          if (pipelineRunId) flushRunIds.push(pipelineRunId);
+          for (const rid of flushRunIds) {
+            const since2 = epLastLogId[rid] || 0;
+            try {
+              const fr = await fetch(`/api/agent/status/${rid}?since_id=${since2}`);
+              const fj = await fr.json().catch(() => ({}));
+              if (fj.ok) {
+                (fj.logs || []).forEach(l => {
+                  appendLine(l.tagClass, l.tagText, l.payload, l.stage);
+                  epLastLogId[rid] = Math.max(epLastLogId[rid] || 0, Number(l.id || 0));
+                });
+              }
+            } catch(_) {}
+          }
           const ok = pStatus === 'completed';
           if (tip) tip.textContent = ok ? '🎉 全剧制作完成!' : '制作已停止 (' + pStatus + ')';
           appendLine('system', 'SYSTEM', `━━━ 全剧流水线结束 [${pStatus}] ━━━`, 'system');
@@ -488,6 +512,18 @@
               }
             }
           }
+          // 同步拉取 pipeline 系统日志（X2C 发布等）
+          if (pipelineRunId) {
+            const pSince = epLastLogId[pipelineRunId] || 0;
+            const pResp = await fetch(`/api/agent/status/${pipelineRunId}?since_id=${pSince}`);
+            const pJson = await pResp.json().catch(() => ({}));
+            if (pJson.ok) {
+              (pJson.logs || []).forEach(l => {
+                appendLine(l.tagClass, l.tagText, l.payload, l.stage);
+                epLastLogId[pipelineRunId] = Math.max(epLastLogId[pipelineRunId] || 0, Number(l.id || 0));
+              });
+            }
+          }
         } else {
           // 没有 running 集:检查是否有 phase1_done 在等 Phase2
           const hasPhase1Done = eps.some(e => e.status === 'phase1_done');
@@ -539,6 +575,14 @@
     const cards = storyProjects.map((p) => {
       const active = p.project_uuid === selectedStoryProjectUuid ? 'active' : '';
       const busy = (p.status === 'running') ? 'busy' : 'idle';
+      // X2C 状态徽标
+      const x2cStatus = p.x2c_status || '';
+      const x2cBadge = p.x2c_project_id
+        ? x2cStatus === 'processing' ? '<span class="x2c-badge x2c-processing">X2C 发布中</span>'
+        : x2cStatus === 'published'  ? '<span class="x2c-badge x2c-published">X2C 已发布</span>'
+        : x2cStatus === 'failed'     ? '<span class="x2c-badge x2c-failed">X2C 失败</span>'
+        : `<span class="x2c-badge x2c-processing">X2C ${x2cStatus}</span>`
+        : '';
       return `
         <div class="agent-card project-card ${busy} ${active}" data-project-uuid="${p.project_uuid}" style="cursor:pointer;">
           <div class="agent-head">
@@ -550,6 +594,7 @@
             <span>${p.aspect || '16:9'} · ${p.language || 'zh-CN'}</span>
             <span>${(p.updated_at || '').replace('T',' ').slice(0,16)}</span>
           </div>
+          ${x2cBadge ? `<div style="margin-top:6px;">${x2cBadge}</div>` : ''}
         </div>
       `;
     }).join('');
@@ -664,6 +709,27 @@
         </div>
       `;
     }).join('') || '<div class="agent-card idle" style="grid-column:1/-1;"><div class="agent-task">该项目暂无分集数据</div></div>';
+
+    // ── X2C 发布状态展示 ──
+    const proj = data.project || {};
+    let x2cHtml = '';
+    if (proj.x2c_project_id) {
+      const statusMap = {
+        'processing': { cls:'x2c-processing', label:'发布中', icon:'⏳' },
+        'published':  { cls:'x2c-published',  label:'已发布', icon:'✅' },
+        'failed':     { cls:'x2c-failed',     label:'失败',   icon:'❌' },
+      };
+      const st = statusMap[proj.x2c_status] || { cls:'x2c-processing', label: proj.x2c_status || '-', icon:'📡' };
+      const pubAt = (proj.x2c_published_at || '').replace('T',' ').slice(0,16);
+      x2cHtml = `
+        <div class="x2c-status-bar">
+          <span class="x2c-badge ${st.cls}" style="font-size:12px;padding:4px 10px;">${st.icon} X2C ${st.label}</span>
+          <span style="font-size:11px;opacity:.6;margin-left:8px;">项目ID: ${proj.x2c_project_id.slice(0,12)}...</span>
+          ${pubAt ? `<span style="font-size:11px;opacity:.5;margin-left:8px;">${pubAt}</span>` : ''}
+        </div>`;
+    }
+    const x2cBar = document.getElementById('x2c-status-bar');
+    if (x2cBar) x2cBar.innerHTML = x2cHtml;
 
     // Store episodes data for modal access
     window._currentEpisodes = eps;
@@ -994,6 +1060,7 @@
         <button id="oclawRefresh" class="oclaw-btn" style="background:#222;color:#ddd;">刷新项目数据</button>
       </div>
 
+      <div id="x2c-status-bar" style="margin:4px 0;"></div>
       <div class="oclaw-db" id="oclawDb">本地数据库快照: 暂无数据</div>
     `;
     terminalHeader.insertAdjacentElement('afterend', panel);

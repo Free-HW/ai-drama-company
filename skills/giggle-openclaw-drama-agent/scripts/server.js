@@ -133,48 +133,48 @@ async function buildEpisodePlanAI({ idea, episodeCount }) {
   const GATEWAY = process.env.OPENCLAW_GATEWAY_URL || 'http://localhost:18789';
   const PASS = process.env.OPENCLAW_GATEWAY_PASSWORD || '';
 
-  const prompt = `你是专业短剧编剧。根据以下创意，生成一部完整的${total}集短剧剧本。
+  const prompt = `你是专业短剧编剧。根据以下创意,生成一部完整的${total}集短剧剧本。
 
-创意：${idea}
+创意:${idea}
 
-严格按照以下格式输出每一集，不要有任何额外说明文字：
+严格按照以下格式输出每一集,不要有任何额外说明文字:
 
-### 🎬 第1集（目标：120秒）
+### 🎬 第1集(目标:120秒)
 【剧情概要】
-（100-150字，描述本集核心剧情，交代人物关系和冲突）
+(100-150字,描述本集核心剧情,交代人物关系和冲突)
 
 【角色表】
-角色名：角色描述（每行一个）
+角色名:角色描述(每行一个)
 
 【Shot-by-Shot脚本·15-17镜头·每镜5-8秒】
-Shot 1（7s）
-画面/事件：（具体场景描述）
-台词：角色名："台词内容"
-镜头调度：（镜头运动描述）
-画面Prompt：（英文风格的画面描述，用于AI生图）
-音频：（音效和背景音乐描述，结尾加"高通滤波，干净静音背景，无背景噪音，无低频隆隆声"）
+Shot 1(7s)
+画面/事件:(具体场景描述)
+台词:角色名:"台词内容"
+镜头调度:(镜头运动描述)
+画面Prompt:(英文风格的画面描述,用于AI生图)
+音频:(音效和背景音乐描述,结尾加"高通滤波,干净静音背景,无背景噪音,无低频隆隆声")
 
-（继续Shot 2到Shot 15-17，格式相同）
+(继续Shot 2到Shot 15-17,格式相同)
 
 【高能台词】
-1. 角色名："台词"
-2. 角色名："台词"
-3. 角色名："台词"
+1. 角色名:"台词"
+2. 角色名:"台词"
+3. 角色名:"台词"
 
 【音频设计】
-（整集音频风格描述，50字左右）
+(整集音频风格描述,50字左右)
 
 【下集预告】
-（一句话预告下集内容）
+(一句话预告下集内容)
 
-要求：
-- 剧情连续，每集有完整的起承转合
-- 每集15-17个Shot，每个Shot 5-8秒
-- 台词自然口语化，符合人物性格
-- 画面Prompt用中文描述，简洁有画面感
-- 所有${total}集按顺序输出，集与集之间用空行分隔`;
+要求:
+- 剧情连续,每集有完整的起承转合
+- 每集15-17个Shot,每个Shot 5-8秒
+- 台词自然口语化,符合人物性格
+- 画面Prompt用中文描述,简洁有画面感
+- 所有${total}集按顺序输出,集与集之间用空行分隔`;
 
-  // 最多重试 3 次，每次间隔 5 秒
+  // 最多重试 3 次,每次间隔 5 秒
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       const resp = await fetch(`${GATEWAY}/v1/chat/completions`, {
@@ -195,7 +195,7 @@ Shot 1（7s）
         const episodes = parseScriptText(text, total);
         if (episodes.length > 0) return episodes;
       }
-      break; // 请求成功但内容不符，不重试
+      break; // 请求成功但内容不符,不重试
     } catch (e) {
       console.warn(`[AI Script] LLM attempt ${attempt}/3 failed: ${e.message}`);
       if (attempt < 3) await new Promise(r => setTimeout(r, 5000));
@@ -246,44 +246,44 @@ function splitRawStory(raw, total) {
 
 function buildLocalScriptFallback(idea, total) {
   const arcs = [
-    { name: '相遇', hook: '命运安排两人意外相遇，产生强烈的第一印象。' },
-    { name: '误解', hook: '一场误会让关系急转直下，双方各执一词。' },
-    { name: '靠近', hook: '共同面对危机，两人不得不携手合作。' },
-    { name: '心动', hook: '细节中的温柔让对方心防松动，情愫暗生。' },
-    { name: '阻碍', hook: '外部势力介入，强行拆散两人。' },
+    { name: '相遇', hook: '命运安排两人意外相遇,产生强烈的第一印象。' },
+    { name: '误解', hook: '一场误会让关系急转直下,双方各执一词。' },
+    { name: '靠近', hook: '共同面对危机,两人不得不携手合作。' },
+    { name: '心动', hook: '细节中的温柔让对方心防松动,情愫暗生。' },
+    { name: '阻碍', hook: '外部势力介入,强行拆散两人。' },
     { name: '表白', hook: '压抑已久的情感在关键时刻爆发。' },
-    { name: '危机', hook: '最大的考验来临，感情面临终极抉择。' },
-    { name: '和解', hook: '真相大白，误会消除，两人重归于好。' },
-    { name: '升华', hook: '经历磨难后感情更加坚定，共同面对未来。' },
-    { name: '圆满', hook: '所有伏笔收束，以温暖结局收尾。' },
+    { name: '危机', hook: '最大的考验来临,感情面临终极抉择。' },
+    { name: '和解', hook: '真相大白,误会消除,两人重归于好。' },
+    { name: '升华', hook: '经历磨难后感情更加坚定,共同面对未来。' },
+    { name: '圆满', hook: '所有伏笔收束,以温暖结局收尾。' },
   ];
   return Array.from({ length: total }, (_, i) => {
     const arc = arcs[Math.min(i, arcs.length - 1)];
     const epNo = i + 1;
     const isLast = epNo === total;
-    const nextHook = isLast ? '全剧终，留下温暖余韵。' : `下集预告：${arcs[Math.min(i + 1, arcs.length - 1)].hook}`;
+    const nextHook = isLast ? '全剧终,留下温暖余韵。' : `下集预告:${arcs[Math.min(i + 1, arcs.length - 1)].hook}`;
     const script = [
       `【第${epNo}集·${arc.name}】`,
       ``,
-      `■ 主题：${arc.hook}`,
-      `■ 核心创意：${idea}`,
+      `■ 主题:${arc.hook}`,
+      `■ 核心创意:${idea}`,
       ``,
-      `【场景一：开场（0-15秒）】`,
-      `画面：特写镜头，环境音渐入。`,
-      `动作：主角出现，状态暗示本集情绪基调。`,
+      `【场景一:开场(0-15秒)】`,
+      `画面:特写镜头,环境音渐入。`,
+      `动作:主角出现,状态暗示本集情绪基调。`,
       ``,
-      `【场景二：冲突（15-60秒）】`,
-      `对白：`,
-      `  主角A：（${arc.name}情绪）「……」`,
-      `  主角B：（反应）「……」`,
-      `动作：${arc.hook}`,
+      `【场景二:冲突(15-60秒)】`,
+      `对白:`,
+      `  主角A:(${arc.name}情绪)「......」`,
+      `  主角B:(反应)「......」`,
+      `动作:${arc.hook}`,
       ``,
-      `【场景三：转折（60-90秒）】`,
-      `画面：情绪爆点，节奏加快。`,
-      `动作：局势发生意外变化，观众情绪被调动。`,
+      `【场景三:转折(60-90秒)】`,
+      `画面:情绪爆点,节奏加快。`,
+      `动作:局势发生意外变化,观众情绪被调动。`,
       ``,
-      `【场景四：结尾钩子（90-120秒）】`,
-      `画面：定格或慢镜头。`,
+      `【场景四:结尾钩子(90-120秒)】`,
+      `画面:定格或慢镜头。`,
       `${nextHook}`,
     ].join('\n');
     return {
@@ -299,7 +299,23 @@ function buildLocalScriptFallback(idea, total) {
 
 // 用 AI 从 idea 中智能提取项目名称
 /**
- * 调用 Gateway LLM 智能生成项目名称（60秒超时）
+ * 本地快速提取名称（从 idea 里取前 10 个实词）
+ */
+function quickExtractName(idea) {
+  if (!idea) return null;
+  // 去掉集数描述、常见无效词
+  const cleaned = idea
+    .replace(/(共|总共|大约|一共)?\d+\s*(集|话|期|部)/g, '')
+    .replace(/(共|单|只有|仅)?一集/g, '')
+    .replace(/[，。！？,.!?\n\r]/g, ' ')
+    .trim();
+  // 取前 10 个字符作为名称候选
+  const name = cleaned.slice(0, 12).trim();
+  return name.length >= 2 ? name : null;
+}
+
+/**
+ * 调用 Gateway LLM 智能生成项目名称（20秒超时），失败则本地快速提取
  */
 async function aiGenerateProjectName(idea) {
   try {
@@ -316,26 +332,29 @@ async function aiGenerateProjectName(idea) {
           { role: 'user', content: idea },
         ],
       }),
-      signal: AbortSignal.timeout(60000),
+      signal: AbortSignal.timeout(20000),
     });
     const data = await resp.json();
     const name = (data.choices?.[0]?.message?.content || '').trim().replace(/[《》「」【】""''\n]/g, '');
-    if (name) { console.log('[AIName] generated:', name); return name; }
-    return null;
+    if (name && name.length >= 2) { console.log('[AIName] gateway generated:', name); return name; }
+    // Gateway 无效响应，fallback 本地提取
+    const fallback = quickExtractName(idea);
+    if (fallback) console.log('[AIName] fallback to quick extract:', fallback);
+    return fallback;
   } catch (e) {
-    console.warn('[AIName] failed:', e.message);
-    return null;
+    console.warn('[AIName] gateway failed:', e.message, '- using quick extract');
+    return quickExtractName(idea);
   }
 }
 
 // 集数配置
 const EPISODE_COUNT_DEFAULT = 10;  // 用户未指定集数时的默认值
-const EPISODE_COUNT_MAX = 60;       // 最大允许集数（超出自动截断为60）
+const EPISODE_COUNT_MAX = 60;       // 最大允许集数(超出自动截断为60)
 
-// 从 idea 文本中解析集数：支持阿拉伯数字和中文数字，支持"一集/单集"等表达，未匹配返回默认值
+// 从 idea 文本中解析集数:支持阿拉伯数字和中文数字,支持"一集/单集"等表达,未匹配返回默认值
 function parseEpisodeCountFromIdea(idea) {
   const str = String(idea);
-  // 阿拉伯数字：10集、共10集、10期、10话
+  // 阿拉伯数字:10集、共10集、10期、10话
   const m1 = str.match(/(?:共|全|约|只|制作|做|拍)?\s*(\d+)\s*(?:集|期|话|章|个视频|条视频|个短片)/);
   if (m1) return Math.min(Math.max(parseInt(m1[1]), 1), EPISODE_COUNT_MAX);
   // 中文数字映射
@@ -354,7 +373,7 @@ app.post('/api/agent/projects', async (req, res) => {
     const { name, idea, language, aspect, style, episodeCount, videoDuration, bible, characters } = req.body || {};
     if (!idea || !idea.trim()) return res.status(400).json({ ok: false, error: 'idea is required' });
     const VALID_DURATIONS = [60, 120, 180, 240, 300];
-    // 从请求参数取，如果没有则从创意文本解析（支持"120秒/120分钟/s"格式）
+    // 从请求参数取,如果没有则从创意文本解析(支持"120秒/120分钟/s"格式)
     const m = String(idea).match(/(\d+)\s*(秒|分钟|min|s|secs?)/i);
     let parsedDuration = VALID_DURATIONS.includes(Number(videoDuration)) ? Number(videoDuration) : 60;
     if (parsedDuration === 60 && m) {
@@ -363,10 +382,10 @@ app.post('/api/agent/projects', async (req, res) => {
       const seconds = isMinute ? val * 60 : val;
       if (VALID_DURATIONS.includes(seconds)) parsedDuration = seconds;
     }
-    // 解析集数：前端传则用，否则从 idea 解析，默认 10 集
+    // 解析集数:前端传则用,否则从 idea 解析,默认 10 集
     const finalEpisodeCount = episodeCount ? Math.min(Math.max(Number(episodeCount), 1), EPISODE_COUNT_MAX)
                                             : parseEpisodeCountFromIdea(idea);
-    // 项目名：用户输入优先，否则先用临时名，后台 AI 异步命名
+    // 项目名:用户输入优先,否则先用临时名,后台 AI 异步命名
     const userInputName = (name && name.trim()) ? name.trim() : '';
     const tempName = userInputName || `生成中-${new Date().toISOString().slice(0, 10)}`;
     const projectUuid = randomUUID();
@@ -390,21 +409,21 @@ app.post('/api/agent/projects', async (req, res) => {
       rawJson: bible || {},
     });
 
-    // 先返回项目创建成功，后台异步生成 AI 剧本
+    // 先返回项目创建成功,后台异步生成 AI 剧本
     await setStoryProjectStatus(db, { projectUuid, status: 'generating' });
     const project0 = await getStoryProject(db, projectUuid);
     res.json({ ok: true, data: { project: project0, episodes: [], generating: true } });
 
-    // 异步：AI命名 + 风格匹配 + 剧本生成 并行执行
+    // 异步:AI命名 + 风格匹配 + 剧本生成 并行执行
     (async () => {
-      // 先触发剧本生成，让前端立刻看到进度
+      // 先触发剧本生成,让前端立刻看到进度
       triggerScriptGeneration(projectUuid, idea.trim(), finalEpisodeCount);
 
-      // AI 命名（如果用户没有输入名称）
+      // AI 命名(如果用户没有输入名称)
       if (!userInputName) {
         const scriptRunId = db.prepare('SELECT script_run_id FROM story_projects WHERE project_uuid=?').get(projectUuid)?.script_run_id;
         // 写一条日志提示正在命名
-        if (scriptRunId) addLog(db, { runId: scriptRunId, stage: 'system', tagClass: 'system', tagText: 'SYSTEM', payload: '[AIName] 正在分析内容，AI 智能命名中...' }).catch(() => {});
+        if (scriptRunId) addLog(db, { runId: scriptRunId, stage: 'system', tagClass: 'system', tagText: 'SYSTEM', payload: '[AIName] 正在分析内容,AI 智能命名中...' }).catch(() => {});
         aiGenerateProjectName(idea.trim()).then(aiName => {
           if (aiName) {
             db.prepare('UPDATE story_projects SET name=?, updated_at=? WHERE project_uuid=?')
@@ -412,7 +431,7 @@ app.post('/api/agent/projects', async (req, res) => {
             console.log('[AIName] updated project name to:', aiName);
             // 写日志通知前端
             const runId2 = db.prepare('SELECT script_run_id FROM story_projects WHERE project_uuid=?').get(projectUuid)?.script_run_id;
-            if (runId2) addLog(db, { runId: runId2, stage: 'system', tagClass: 'system', tagText: 'SYSTEM', payload: `[AIName] 项目命名完成：${aiName}` }).catch(() => {});
+            if (runId2) addLog(db, { runId: runId2, stage: 'system', tagClass: 'system', tagText: 'SYSTEM', payload: `[AIName] 项目命名完成:${aiName}` }).catch(() => {});
           }
         }).catch(e => console.warn('[AIName] async failed:', e.message));
       }
@@ -453,7 +472,8 @@ app.get('/api/agent/projects/:projectUuid', async (req, res) => {
       if (m?.raw_json) { try { const r = JSON.parse(m.raw_json); image_url = r.image_url || r.image_signed_url || ''; asset_id = r.asset_id || ''; voice_name = r.voice_name || ''; } catch {} }
       return { ...c, image_url, asset_id, voice_name };
     });
-    res.json({ ok: true, data: { project, episodes, characters: charsWithImages, mappings, shots: [], scriptRunId: project.script_run_id || '' } });
+    res.json({ ok: true, data: { project, episodes, characters: charsWithImages, mappings, shots: [], scriptRunId: project.script_run_id || '',
+      pipelineRunId: (() => { try { return db.prepare('SELECT run_id FROM runs WHERE project_id=? ORDER BY id DESC LIMIT 1').get(req.params.projectUuid)?.run_id || ''; } catch{ return ''; } })() } });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
@@ -472,14 +492,14 @@ app.post('/api/agent/projects/:projectUuid/episodes/:episodeNo/run', async (req,
     const episode = await getProjectEpisodeByNo(db, { projectUuid, episodeNo: Number(episodeNo) });
     if (!episode) return res.status(404).json({ ok: false, error: 'episode not found' });
 
-    // 清理旧 run 数据，保持本地数据完整性
+    // 清理旧 run 数据,保持本地数据完整性
     if (episode.run_id) {
       const oldRunId = episode.run_id;
       for (const tbl of ['run_logs','scripts','storyboards','characters']) {
         db.prepare(`DELETE FROM ${tbl} WHERE run_id=?`).run(oldRunId);
       }
       db.prepare('DELETE FROM runs WHERE run_id=?').run(oldRunId);
-      // character_mappings 不删除，重新生成时 saveGlobalCharacter 会用 is_active=0 停用旧映射再插入新的
+      // character_mappings 不删除,重新生成时 saveGlobalCharacter 会用 is_active=0 停用旧映射再插入新的
     }
 
     const runId = randomUUID();
@@ -509,7 +529,7 @@ app.post('/api/agent/projects/:projectUuid/episodes/:episodeNo/run', async (req,
           pollIntervalMs: Number(process.env.POLL_INTERVAL_MS || 5000),
           pollTimeoutMs: Number(process.env.POLL_TIMEOUT_MS || 3600000), // 默认60分钟
         });
-        // 风格参数：优先用 DB 存储的（创建项目时已智能匹配），其次前端传参，最后默认值
+        // 风格参数:优先用 DB 存储的(创建项目时已智能匹配),其次前端传参,最后默认值
         const styleId = project.style_id || req.body?.styleId || 146;
         const videoDuration = project.video_duration || req.body?.videoDuration || 60;
 
@@ -712,21 +732,21 @@ app.post('/api/agent/projects/:projectUuid/regenerate-script', async (req, res) 
 const _generatingSet = new Set();
 const { spawn } = require('child_process');
 
-// Giggle 支持的风格列表（缓存，避免重复请求）
+// Giggle 支持的风格列表(缓存,避免重复请求)
 const GIGGLE_STYLES = [
-  { id: 142, name: '3D古风', desc: '3D国风仙侠，史诗幻想，适合古装、修仙、宫廷' },
-  { id: 143, name: '2D漫剧', desc: '日漫国漫二次元，适合青春、校园、轻喜剧' },
-  { id: 144, name: '吉卜力', desc: '治愈手绘，温暖生活气息，适合温情、家庭、治愈' },
-  { id: 145, name: '皮克斯', desc: '3D卡通动画，情绪强烈，适合喜剧、奇幻、儿童' },
-  { id: 146, name: '写实风格', desc: '电影级写实，真实光影，适合都市、商战、悬疑、爱情' },
-  { id: 147, name: '二次元', desc: '标准动漫画风，适合二次元、恋爱、热血' },
-  { id: 148, name: '国风水墨', desc: '中国水墨，意境留白，适合古风、诗意、历史' },
+  { id: 142, name: '3D古风', desc: '3D国风仙侠,史诗幻想,适合古装、修仙、宫廷' },
+  { id: 143, name: '2D漫剧', desc: '日漫国漫二次元,适合青春、校园、轻喜剧' },
+  { id: 144, name: '吉卜力', desc: '治愈手绘,温暖生活气息,适合温情、家庭、治愈' },
+  { id: 145, name: '皮克斯', desc: '3D卡通动画,情绪强烈,适合喜剧、奇幻、儿童' },
+  { id: 146, name: '写实风格', desc: '电影级写实,真实光影,适合都市、商战、悬疑、爱情' },
+  { id: 147, name: '二次元', desc: '标准动漫画风,适合二次元、恋爱、热血' },
+  { id: 148, name: '国风水墨', desc: '中国水墨,意境留白,适合古风、诗意、历史' },
 ];
 
 async function matchStyleId(idea) {
   try {
-    const styleList = GIGGLE_STYLES.map(s => s.id + '. ' + s.name + '：' + s.desc).join('\n');
-    const prompt = '根据以下短剧创意，从风格列表中选择最合适的一个风格，只返回风格ID数字，不要任何其他内容。\n\n创意：' + idea + '\n\n风格列表：\n' + styleList;
+    const styleList = GIGGLE_STYLES.map(s => s.id + '. ' + s.name + ':' + s.desc).join('\n');
+    const prompt = '根据以下短剧创意,从风格列表中选择最合适的一个风格,只返回风格ID数字,不要任何其他内容。\n\n创意:' + idea + '\n\n风格列表:\n' + styleList;
     const GATEWAY = process.env.OPENCLAW_GATEWAY_URL || 'http://localhost:18789';
     const PASS = process.env.OPENCLAW_GATEWAY_PASSWORD || '';
     const resp = await fetch(GATEWAY + '/v1/chat/completions', {
@@ -745,7 +765,7 @@ async function matchStyleId(idea) {
   } catch (e) {
     console.warn('[StyleMatch] failed:', e.message);
   }
-  return 146; // 默认写实风格（都市剧最常见）
+  return 146; // 默认写实风格(都市剧最常见)
 }
 
 function triggerScriptGeneration(projectUuid, idea, episodeCount) {
@@ -755,7 +775,7 @@ function triggerScriptGeneration(projectUuid, idea, episodeCount) {
   }
   _generatingSet.add(projectUuid);
 
-  // 创建 script_run_id，写入 runs 表，供前端轮询日志
+  // 创建 script_run_id,写入 runs 表,供前端轮询日志
   const scriptRunId = randomUUID();
   createRun(db, { runId: scriptRunId, idea, projectName: `[剧本生成] ${projectUuid.slice(0,8)}` }).catch(() => {});
   db.prepare('UPDATE story_projects SET script_run_id=? WHERE project_uuid=?').run(scriptRunId, projectUuid);
@@ -773,7 +793,7 @@ function triggerScriptGeneration(projectUuid, idea, episodeCount) {
     _generatingSet.delete(projectUuid);
     console.log(`[AI Script] subprocess exited code=${code} for ${projectUuid}`);
     if (code === 0) {
-      // 剧本生成成功，直接在主进程触发全剧流水线
+      // 剧本生成成功,直接在主进程触发全剧流水线
       console.log(`[AI Script] triggering auto-run for ${projectUuid}`);
       runAutoRun(projectUuid).catch(e => console.error('[AutoRun] failed:', e.message));
     }
@@ -822,7 +842,7 @@ app.get('/api/agent/projects/:projectUuid/shots', async (req, res) => {
   }
 });
 
-// ── 全剧流水线核心函数（供 HTTP 接口和子进程回调共用）──
+// ── 全剧流水线核心函数(供 HTTP 接口和子进程回调共用)──
 async function runAutoRun(projectUuid) {
     const project = await getStoryProject(db, projectUuid);
     if (!project) throw new Error('project not found: ' + projectUuid);
@@ -830,13 +850,15 @@ async function runAutoRun(projectUuid) {
     const episodes = await listProjectEpisodesByUuid(db, projectUuid);
     if (!episodes.length) throw new Error('no episodes found for ' + projectUuid);
 
-    // 为整个流水线创建一个顶层 run（用于状态展示）
+    // 为整个流水线创建一个顶层 run(用于状态展示)
     const pipelineRunId = require('crypto').randomUUID();
     await createRun(db, {
       runId: pipelineRunId,
       idea: project.idea,
       projectName: `${project.name} 全剧自动流水线`,
     });
+    // 将 pipeline run 关联到 story_project
+    await setProjectId(db, { runId: pipelineRunId, projectId: projectUuid });
     const pipelineEmit = (tagClass, tagText, payload, stage) => {
       addLog(db, { runId: pipelineRunId, stage, tagClass, tagText, payload }).catch(() => {});
     };
@@ -859,8 +881,8 @@ async function runAutoRun(projectUuid) {
     const styleId = project.style_id || req.body?.styleId || 146;
     const videoDuration = project.video_duration || req.body?.videoDuration || 60;
 
-    // ── Phase 1：串行跑完所有集的分镜图 ──
-    pipelineEmit('system', 'SYSTEM', `[Pipeline] Phase 1 开始：生成分镜图（${episodes.length} 集）`, 'system');
+    // ── Phase 1:串行跑完所有集的分镜图 ──
+    pipelineEmit('system', 'SYSTEM', `[Pipeline] Phase 1 开始:生成分镜图(${episodes.length} 集)`, 'system');
     for (const ep of episodes) {
       pipelineEmit('system', 'SYSTEM', `[Pipeline] Phase 1 - EP${ep.episode_no} 开始`, 'system');
 
@@ -894,7 +916,7 @@ async function runAutoRun(projectUuid) {
           runId,
           episodeNo: ep.episode_no,
         }, emit);
-        // Phase1 完成：标记集状态为 phase1_done，方便前端区分阶段
+        // Phase1 完成:标记集状态为 phase1_done,方便前端区分阶段
         db.prepare('UPDATE project_episodes SET status=?,updated_at=? WHERE project_uuid=? AND episode_no=?')
           .run('phase1_done', new Date().toISOString(), projectUuid, ep.episode_no);
         db.prepare('UPDATE runs SET status=?,updated_at=? WHERE run_id=?')
@@ -907,10 +929,10 @@ async function runAutoRun(projectUuid) {
         continue; // Phase 1 失败直接跳过该集的 Phase 2
       }
     }
-    pipelineEmit('system', 'SYSTEM', `[Pipeline] Phase 1 全部完成，开始 Phase 2`, 'system');
+    pipelineEmit('system', 'SYSTEM', `[Pipeline] Phase 1 全部完成,开始 Phase 2`, 'system');
 
-    // ── Phase 2：串行跑完所有集的视频+导出 ──
-    // 重新从 DB 读取最新 episodes（Phase1 已写入新的 run_id 和 giggle_project_id）
+    // ── Phase 2:串行跑完所有集的视频+导出 ──
+    // 重新从 DB 读取最新 episodes(Phase1 已写入新的 run_id 和 giggle_project_id)
     const updatedEpisodes = await listProjectEpisodesByUuid(db, projectUuid);
     for (const ep of updatedEpisodes) {
       pipelineEmit('system', 'SYSTEM', `[Pipeline] Phase 2 - EP${ep.episode_no} 开始`, 'system');
@@ -918,7 +940,7 @@ async function runAutoRun(projectUuid) {
       // 从最新 DB 读取 Phase1 写入的 runId 和 giggle_project_id
       const runId = ep.run_id;
       const giggleProjectId = ep.giggle_project_id;
-      // Phase2 开始：把 episode 和 run 状态改回 running，前端重新触发轮询
+      // Phase2 开始:把 episode 和 run 状态改回 running,前端重新触发轮询
       if (runId) {
         db.prepare('UPDATE project_episodes SET status=?,updated_at=? WHERE project_uuid=? AND episode_no=?')
           .run('running', new Date().toISOString(), projectUuid, ep.episode_no);
@@ -926,7 +948,7 @@ async function runAutoRun(projectUuid) {
           .run('running', new Date().toISOString(), runId);
       }
       if (!runId || !giggleProjectId) {
-        pipelineEmit('system', 'SYSTEM', `[Pipeline] EP${ep.episode_no} 缺少 runId 或 giggle_project_id，跳过`, 'system');
+        pipelineEmit('system', 'SYSTEM', `[Pipeline] EP${ep.episode_no} 缺少 runId 或 giggle_project_id,跳过`, 'system');
         continue;
       }
       const emit = (tagClass, tagText, payload, stage) => {
@@ -972,8 +994,8 @@ async function runAutoRun(projectUuid) {
       }
     }
 
-    // ── 全剧完成：清理角色库 ──
-    pipelineEmit('system', 'SYSTEM', `[Pipeline] 全剧完成，清理角色库...`, 'system');
+    // ── 全剧完成:清理角色库 ──
+    pipelineEmit('system', 'SYSTEM', `[Pipeline] 全剧完成,清理角色库...`, 'system');
     const chars = db.prepare('SELECT library_character_id FROM story_characters WHERE story_project_uuid=?').all(projectUuid);
     const deleted = [];
     for (const c of chars) {
@@ -986,16 +1008,16 @@ async function runAutoRun(projectUuid) {
         pipelineEmit('agent-b', 'AGENT-B', `[CastingAgent] 删除角色失败 library_character_id=${c.library_character_id}: ${e.message}`, 'casting');
       }
     }
-    // 从本地 story_characters 表删除（可选，保留记录也可以）
+    // 从本地 story_characters 表删除(可选,保留记录也可以)
 
     // 更新项目状态
     const finalEps = await listProjectEpisodesByUuid(db, projectUuid);
     const hasFailed = finalEps.some((e) => e.status === 'failed');
     await setStoryProjectStatus(db, { projectUuid, status: hasFailed ? 'partial_failed' : 'completed' });
     await finishRun(db, { runId: pipelineRunId, status: 'completed', exportUrl: '' });
-    pipelineEmit('system', 'SYSTEM', `[Pipeline] 全剧流水线完成，已删除 ${deleted.length} 个角色`, 'system');
+    pipelineEmit('system', 'SYSTEM', `[Pipeline] 全剧流水线完成,已删除 ${deleted.length} 个角色`, 'system');
 
-    // ── X2C 自动发布（异步，不阻塞主流程，不影响现有功能）──
+    // ── X2C 自动发布(异步,不阻塞主流程,不影响现有功能)──
     if (!hasFailed) {
       const project = await getStoryProject(db, projectUuid);
       // 检查是否已发布
@@ -1015,20 +1037,20 @@ async function runAutoRun(projectUuid) {
           // 写入 DB
           db.prepare('UPDATE story_projects SET x2c_project_id=?,x2c_status=?,x2c_published_at=?,updated_at=? WHERE project_uuid=?')
             .run(result.x2cProjectId, result.status, new Date().toISOString(), new Date().toISOString(), projectUuid);
-          pipelineEmit('system', 'SYSTEM', `[X2C] 发布成功！分类：${result.category}，项目ID：${result.x2cProjectId}，状态：${result.status}`, 'system');
+          pipelineEmit('system', 'SYSTEM', `[X2C] 发布成功!分类:${result.category},项目ID:${result.x2cProjectId},状态:${result.status}`, 'system');
         } catch (e) {
-          pipelineEmit('system', 'SYSTEM', `[X2C] 发布失败（不影响制作结果）：${e.message}`, 'system');
+          pipelineEmit('system', 'SYSTEM', `[X2C] 发布失败(不影响制作结果):${e.message}`, 'system');
           console.error('[X2C] publish error:', e.message);
         }
       } else {
-        pipelineEmit('system', 'SYSTEM', `[X2C] 已发布，跳过（x2c_project_id=${project.x2c_project_id}）`, 'system');
+        pipelineEmit('system', 'SYSTEM', `[X2C] 已发布,跳过(x2c_project_id=${project.x2c_project_id})`, 'system');
       }
     }
 
     return { pipelineRunId, phase1Count: episodes.length, deletedCharacters: deleted };
 }
 
-// HTTP 接口：触发全剧流水线（立即返回，后台异步执行）
+// HTTP 接口:触发全剧流水线(立即返回,后台异步执行)
 app.post('/api/agent/projects/:projectUuid/auto-run', async (req, res) => {
   const { projectUuid } = req.params;
   try {
@@ -1036,7 +1058,7 @@ app.post('/api/agent/projects/:projectUuid/auto-run', async (req, res) => {
     if (!project) return res.status(404).json({ ok: false, error: 'project not found' });
     const episodes = await listProjectEpisodesByUuid(db, projectUuid);
     if (!episodes.length) return res.status(400).json({ ok: false, error: 'no episodes found' });
-    // 立即返回，后台异步执行
+    // 立即返回,后台异步执行
     res.json({ ok: true, data: { projectUuid, status: 'pipeline_started' } });
     runAutoRun(projectUuid).catch(e => console.error('[AutoRun] failed:', e.message));
   } catch (e) {
