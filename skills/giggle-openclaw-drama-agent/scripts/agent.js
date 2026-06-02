@@ -77,15 +77,17 @@ class DramaAgent {
     const genCharResp = await this.giggle.generateCharacters(projectId);
     emit('agent-b', 'AGENT-B', `[CastingAgent] generateCharacters 请求: projectId=${projectId} 响应: ${JSON.stringify(genCharResp?.data || genCharResp).slice(0, 200)}`, 'casting');
 
-    // 先等一下让 Giggle 把角色数据准备好（generateCharacters 是异步触发）
-    await new Promise(r => setTimeout(r, 3000));
+    // 等 Giggle 把角色生成任务调度起来（generateCharacters 是异步触发，需要一定时间准备数据）
+    emit('agent-b', 'AGENT-B', '[CastingAgent] 等待 Giggle 准备角色数据...', 'casting');
+    await new Promise(r => setTimeout(r, 8000));
 
     // listCharacters 可能因 Giggle 内部错误返回 code:500，用安全包装防止 throw
     const safeListCharacters = async () => {
       try {
         return await this.giggle.listCharacters(projectId);
       } catch (e) {
-        // Giggle 接口偶发失败时返回空结构，继续轮询
+        // Giggle 接口尚未就绪（如券20后我方即调），返回 pending 继续轮询
+        emit('agent-b', 'AGENT-B', `[CastingAgent] listCharacters 暂时不可用(${e.message.slice(0,60)})，等待重试...`, 'casting');
         return { data: { status: 'pending', character_list: [] } };
       }
     };
