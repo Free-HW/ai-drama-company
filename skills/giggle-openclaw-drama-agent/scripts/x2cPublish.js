@@ -165,19 +165,24 @@ async function publishToX2C({ projectName, idea, episodes }) {
   const title = projectName.slice(0, 50);
   const description = (idea || projectName).slice(0, 500);
 
-  // ── Step 1: 批量获取所有集的 cover + video 上传 URL ──
-  // 每集需要 1 个 cover（若有）+ 1 个 video，一次请求拿全部
+  // ── Step 1: 获取上传 URL ──
+  // upload-url 接口限制：只允许 1 个 cover + N 个 video
+  // 只用第 1 集的封面作为项目封面
+  const firstEp = validEps[0];
   const fileRequests = [];
+
+  // 仅添加 1 个 cover（第1集封面）
+  if (firstEp.cover_url) {
+    fileRequests.push({
+      file_type: 'cover',
+      file_name: 'cover.jpg',
+      content_type: 'image/jpeg',
+      _epNo: firstEp.episode_no,
+      _kind: 'cover',
+    });
+  }
+  // 所有集的视频
   for (const ep of validEps) {
-    if (ep.cover_url) {
-      fileRequests.push({
-        file_type: 'cover',
-        file_name: `ep${ep.episode_no}_cover.jpg`,
-        content_type: 'image/jpeg',
-        _epNo: ep.episode_no,
-        _kind: 'cover',
-      });
-    }
     fileRequests.push({
       file_type: 'video',
       file_name: `ep${ep.episode_no}.mp4`,
@@ -195,37 +200,35 @@ async function publishToX2C({ projectName, idea, episodes }) {
     throw new Error('获取 S3 上传 URL 失败: ' + JSON.stringify(uploadUrlResp).slice(0, 200));
   }
 
-  // 将 uploads 按顺序和 fileRequests 对齐（接口返回顺序与请求顺序一致）
   const uploads = uploadUrlResp.uploads;
   if (uploads.length !== fileRequests.length) {
     throw new Error(`upload-url 返回数量不匹配: 期望 ${fileRequests.length}，实际 ${uploads.length}`);
   }
 
-  // ── Step 2: 逐集上传 cover + video 到 S3 ──
-  const epPublicUrls = {}; // { [epNo]: { coverPublicUrl, videoPublicUrl } }
+  // ── Step 2: 依次上传 cover + 所有视频到 S3 ──
+  let coverPublicUrl = '';
+  const videoPublicUrls = [];
+
   for (let i = 0; i < fileRequests.length; i++) {
     const req = fileRequests[i];
     const slot = uploads[i];
     const ep = validEps.find(e => e.episode_no === req._epNo);
     const sourceUrl = req._kind === 'cover' ? ep.cover_url : ep.export_url;
 
-    console.log(`[X2C Upload] EP${req._epNo} ${req._kind} → S3 (${(slot.public_url || '').slice(0, 60)}...)`);
+    console.log(`[X2C Upload] EP${req._epNo} ${req._kind} → ${(slot.public_url || '').slice(0, 70)}...`);
     await uploadStreamToS3(sourceUrl, slot.upload_url, slot.upload_headers, req.content_type);
     console.log(`[X2C Upload] EP${req._epNo} ${req._kind} ✓`);
 
-    if (!epPublicUrls[req._epNo]) epPublicUrls[req._epNo] = {};
-    epPublicUrls[req._epNo][req._kind === 'cover' ? 'coverPublicUrl' : 'videoPublicUrl'] = slot.public_url;
+    if (req._kind === 'cover') {
+      coverPublicUrl = slot.public_url;
+    } else {
+      videoPublicUrls.push(slot.public_url);
+    }
   }
 
-  // ── Step 3: 组装 publish 参数，使用 S3 public_url ──
-  const coverPublicUrl = epPublicUrls[validEps[0].episode_no]?.coverPublicUrl
-    || epPublicUrls[validEps[0].episode_no]?.videoPublicUrl  // 无封面时 fallback
-    || '';
-  const videoPublicUrls = validEps
-    .map(ep => epPublicUrls[ep.episode_no]?.videoPublicUrl)
-    .filter(Boolean);
-
   if (!videoPublicUrls.length) throw new Error('所有视频上传后无 public_url，终止发布');
+  // cover 无法上传时用第1集视频的 public_url 兜底
+  if (!coverPublicUrl) coverPublicUrl = videoPublicUrls[0];
 
   const res = await x2cApi('distribution/publish', {
     title,
