@@ -1495,24 +1495,68 @@ async function loadX2cData() {
       set('x2cWalletAddr', '→ wallet ' + shortWallet);
       set('x2cPendingInfo', `X2C pending: ${fmtX2c(d.x2c_pending_claim)} · locked: ${fmtX2c(d.x2c_pending_release)}`);
     }
-    // 2. 已发布项目
-    const pResp = await fetch('/api/x2c/projects?status=all&pageSize=10');
-    const pJson = await pResp.json().catch(() => ({}));
-    const listEl = document.getElementById('x2cPublishedList');
-    const countEl = document.getElementById('x2cPublishedCount');
-    if (listEl && pJson.ok) {
-      const projects = pJson.data?.projects || pJson.data?.data || [];
-      if (countEl) countEl.textContent = projects.length + ' projects';
-      const statusColor = { approved:'var(--green)', pending_review:'var(--gold)', rejected:'#e05a5a', draft:'var(--text-3)' };
-      const statusLabel = { approved:'✅ 已上线', pending_review:'⏳ 审核中', rejected:'❌ 已拒绝', draft:'📝 草稿' };
-      listEl.innerHTML = projects.length ? projects.map(p => `
-        <div class="tl-item" style="border-left:2px solid ${statusColor[p.status]||'var(--line)'};padding-left:10px;margin-bottom:10px;">
-          <div class="tl-time" style="color:${statusColor[p.status]||'var(--text-3)'};">${statusLabel[p.status]||p.status}</div>
-          <div style="font-family:var(--mono);font-size:12px;color:var(--text);margin:3px 0;">${(p.title||'').slice(0,20)}</div>
-          <div class="tl-source">${p.category_name||''} · ${p.episode_count||1}集</div>
-        </div>`).join('')
-        : '<div style="color:var(--text-3);font-family:var(--mono);font-size:11px;padding:12px 0;">暂无已发布项目</div>';
-    }
+    // 2. 收益/消费明细 (钱包交易记录)
+    try {
+      const tResp = await fetch('/api/x2c/wallet/transactions?page=1&pageSize=15&type=all');
+      const tJson = await tResp.json().catch(() => ({}));
+      const listEl = document.getElementById('x2cPublishedList');
+      const titleEl = document.getElementById('x2cPublishedTitle');
+      if (titleEl) titleEl.textContent = '收益明细 · X2C';
+      if (listEl && tJson.ok && tJson.data) {
+        const txs = tJson.data.transactions || [];
+        const total = tJson.data.total || 0;
+        // 交易类型图标和颜色
+        const txConfig = {
+          // 收益类型 (绿色)
+          mining: { icon: '⛏️', color: 'var(--green)', label: '挖矿收益' },
+          distribution: { icon: '📤', color: 'var(--green)', label: '分发收益' },
+          referral: { icon: '👥', color: 'var(--green)', label: '推荐奖励' },
+          commission: { icon: '💎', color: 'var(--green)', label: '佣金' },
+          copyright: { icon: '©️', color: 'var(--green)', label: '版权收益' },
+          x2c_release: { icon: '📦', color: 'var(--green)', label: 'X2C释放' },
+          x2c_claim: { icon: '💰', color: 'var(--green)', label: 'X2C领取' },
+          // 消费类型 (橙色/红色)
+          consume: { icon: '🔥', color: 'var(--gold)', label: '消费' },
+          ai_clone: { icon: '🤖', color: 'var(--gold)', label: 'AI克隆' },
+          drama_purchase: { icon: '🎬', color: 'var(--gold)', label: '短剧购买' },
+          purchase: { icon: '🛒', color: 'var(--gold)', label: '购买' },
+          pre_charge: { icon: '⚡', color: 'var(--gold)', label: '预充值' },
+          script_generate: { icon: '📝', color: 'var(--gold)', label: '剧本生成' },
+          preview_regen: { icon: '👁️', color: 'var(--gold)', label: '预览重制' },
+          ai_consume: { icon: '🧠', color: 'var(--gold)', label: 'AI消耗' },
+          swap: { icon: '🔁', color: 'var(--cyan)', label: '兑换' },
+          withdrawal: { icon: '🏦', color: '#e05a5a', label: '提现' },
+        };
+        const formatTime = (iso) => {
+          if (!iso) return '';
+          const d = new Date(iso);
+          return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+        };
+        listEl.innerHTML = txs.length ? `
+          <div style="display:flex;gap:8px;margin-bottom:12px;font-size:11px;font-family:var(--mono);">
+            <span style="color:var(--green);">● 收益</span>
+            <span style="color:var(--gold);">● 消费</span>
+            <span style="color:#e05a5a;">● 提现</span>
+          </div>
+          ${txs.map(t => {
+            const cfg = txConfig[t.tx_type] || { icon: '●', color: 'var(--text-3)', label: t.tx_type };
+            const isIn = t.direction === 'in' || t.amount > 0;
+            const amtColor = isIn ? 'var(--green)' : (t.tx_type === 'withdrawal' ? '#e05a5a' : 'var(--gold)');
+            const amtSign = isIn ? '+' : '-';
+            return `
+            <div class="tl-item" style="border-left:2px solid ${cfg.color};padding-left:10px;margin-bottom:12px;position:relative;">
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <span style="font-size:12px;color:var(--text);">${cfg.icon} ${t.title || cfg.label}</span>
+                <span style="font-family:var(--mono);font-size:12px;color:${amtColor};font-weight:600;">${amtSign}${Math.abs(t.amount||0).toFixed(2)} ${t.currency||'X2C'}</span>
+              </div>
+              <div style="font-size:11px;color:var(--text-3);margin-top:4px;line-height:1.4;">${t.description || ''}</div>
+              <div class="tl-source" style="margin-top:4px;font-size:10px;">${formatTime(t.transaction_at)} · ${t.status || 'completed'}</div>
+            </div>`;
+          }).join('')}
+          ${total > 15 ? `<div style="text-align:center;padding:10px 0;font-size:11px;color:var(--text-3);font-family:var(--mono);">共 ${total} 条 · 显示前 15 条</div>` : ''}
+        ` : '<div style="color:var(--text-3);font-family:var(--mono);font-size:11px;padding:12px 0;">暂无交易记录</div>';
+      }
+    } catch (txErr) { console.warn('[refreshX2C] transactions error:', txErr); }
   } catch(e) { /* 静默失败，不影响其他功能 */ }
 }
 

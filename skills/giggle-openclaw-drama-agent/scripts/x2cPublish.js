@@ -346,4 +346,24 @@ async function publishToX2CWithProgress({ projectName, idea, episodes, onProgres
   };
 }
 
-module.exports = { publishToX2C, publishToX2CWithProgress, getWalletBalance, listPublished, queryPublished, getCategories, matchCategory, getVideoStats };
+/**
+ * 获取钱包交易记录（收益/消费明细）
+ * @param {object} params - { page, pageSize, type }
+ * @returns {object} { success, transactions[], total, page, page_size }
+ */
+async function getWalletTransactions({ page = 1, pageSize = 20, type = 'all' } = {}) {
+  const res = await x2cApi('wallet/transactions', {
+    page: Number(page) || 1,
+    page_size: Math.min(Number(pageSize) || 20, 100),
+    type: type || 'all',
+  });
+  return {
+    success: res.success ?? false,
+    transactions: res.transactions || [],
+    total: res.total || 0,
+    page: res.page || 1,
+    page_size: res.page_size || 20,
+  };
+}
+
+module.exports = { publishToX2C, publishToX2CWithProgress, getWalletBalance, getWalletTransactions, listPublished, queryPublished, getCategories, matchCategory, getVideoStats };

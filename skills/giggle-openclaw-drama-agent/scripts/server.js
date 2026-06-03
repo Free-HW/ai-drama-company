@@ -34,7 +34,7 @@ const {
   upsertCharacterMapping,
   listCharacterMappings,
 } = require('./db');
-const { publishToX2C, publishToX2CWithProgress, getWalletBalance, listPublished, queryPublished, getVideoStats } = require('./x2cPublish');
+const { publishToX2C, publishToX2CWithProgress, getWalletBalance, getWalletTransactions, listPublished, queryPublished, getVideoStats } = require('./x2cPublish');
 
 const app = express();
 app.use(cors());
@@ -1140,6 +1140,19 @@ app.get('/api/x2c/balance', async (req, res) => {
     res.json({ ok: true, data });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message, data: {} });
+  }
+});
+
+// ── X2C 钱包交易记录（收益/消费明细）──
+app.get('/api/x2c/wallet/transactions', async (req, res) => {
+  try {
+    const page = Number(req.query.page) || 1;
+    const pageSize = Math.min(Number(req.query.pageSize) || 20, 100);
+    const type = req.query.type || 'all'; // 'all' | 'earnings' | 'purchases'
+    const data = await getWalletTransactions({ page, pageSize, type });
+    res.json({ ok: true, data });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
   }
 });
 
