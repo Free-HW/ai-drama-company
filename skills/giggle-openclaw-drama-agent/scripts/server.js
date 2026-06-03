@@ -1087,10 +1087,12 @@ async function runAutoRun(projectUuid) {
               cover_url: e.cover_url || '',
             }));
           if (!episodesForPublish.length) throw new Error('没有可发布的视频');
-          const result = await publishToX2C({
+          const result = await publishToX2CWithProgress({
             projectName: project.name,
             idea: project.idea,
             episodes: episodesForPublish,
+            onProgress: (tagClass, tagText, payload) =>
+              pipelineEmit(tagClass, tagText, payload, 'distribute'),
           });
           // 写入 DB
           db.prepare('UPDATE story_projects SET x2c_project_id=?,x2c_status=?,x2c_published_at=?,updated_at=? WHERE project_uuid=?')

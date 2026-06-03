@@ -462,6 +462,8 @@
           const ok = pStatus === 'completed';
           if (tip) tip.textContent = ok ? '🎉 全剧制作完成!' : '制作已停止 (' + pStatus + ')';
           appendLine('system', 'SYSTEM', `━━━ 全剧流水线结束 [${pStatus}] ━━━`, 'system');
+          // 流水线结束后刷新项目详情（更新发布按钮状态）
+          await renderStoryEpisodes(window._currentProjectUuid || '').catch(() => {});
           await renderStoryEpisodes(projectUuid);
           await refreshStoryWorkspace();
           return;
@@ -772,14 +774,18 @@
       const allEpsDone = eps.every(ep => ep.status === 'completed' || ep.status === 'failed' || ep.status === 'partial_failed');
       const hasAnyVideo = eps.some(ep => ep.export_url);
       const alreadyPublished = !!proj.x2c_project_id;
+      const x2cStatus = proj.x2c_status || '';
+      const publishBtnLabel = alreadyPublished
+        ? (x2cStatus === 'processing' ? '⏳ 审核中 X2C' : x2cStatus === 'approved' ? '✅ 已上线 X2C' : x2cStatus === 'rejected' ? '❌ 被拒绝 X2C' : '✅ 已发布 X2C')
+        : canPublish ? '📤 发布到 X2C' : '📤 发布到 X2C（制作完成后可用）';
       const canPublish = allEpsDone && hasAnyVideo;
       const btn = document.createElement('button');
       btn.id = 'manual-publish-btn';
       btn.className = 'oclaw-btn';
-      btn.style.cssText = 'font-size:12px;padding:6px 14px;' + (canPublish && !alreadyPublished ? 'background:rgba(80,200,120,.18);border-color:rgba(80,200,120,.5);color:#50c878;' : 'opacity:.4;cursor:not-allowed;');
-      btn.textContent = alreadyPublished ? `✅ 已发布 X2C` : canPublish ? '📤 发布到 X2C' : '📤 发布到 X2C（制作完成后可用）';
+      btn.style.cssText = 'font-size:12px;padding:6px 14px;' + (canPublish && !alreadyPublished ? 'background:rgba(80,200,120,.18);border-color:rgba(80,200,120,.5);color:#50c878;' : alreadyPublished ? 'opacity:.7;cursor:not-allowed;background:rgba(255,200,50,.1);border-color:rgba(255,200,50,.4);color:var(--gold);' : 'opacity:.4;cursor:not-allowed;');
+      btn.textContent = publishBtnLabel;
       btn.disabled = !canPublish || alreadyPublished;
-      btn.title = !canPublish ? '需要全部集制作完成（含有失败集时允许发布已完成集）' : alreadyPublished ? '已发布' : '发布到 X2C 平台';
+      btn.title = !canPublish ? '需要全部集制作完成（含有失败集时允许发布已完成集）' : alreadyPublished ? `已发布到 X2C · 状态: ${x2cStatus}` : '发布到 X2C 平台';
       btn.addEventListener('click', () => manualPublishToX2C(projectUuid));
       // 插到 filter-row 前面
       const filterRow = centerHead.querySelector('.filter-row');
