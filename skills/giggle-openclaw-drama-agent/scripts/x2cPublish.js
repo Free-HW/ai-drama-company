@@ -116,7 +116,40 @@ async function listPublished({ page = 1, pageSize = 20, status = 'all' } = {}) {
 }
 
 /**
+ * 从 URL 流式获取内容并 PUT 上传到 S3 预签名地址
+ * @param {string} sourceUrl  - 源文件 URL（Giggle 签名链接）
+ * @param {string} uploadUrl  - S3 预签名 PUT URL
+ * @param {object} headers    - X2C 返回的 upload_headers
+ * @param {string} contentType
+ */
+async function uploadStreamToS3(sourceUrl, uploadUrl, headers, contentType) {
+  // 1. 从源地址下载
+  const srcResp = await fetch(sourceUrl, { signal: AbortSignal.timeout(120000) });
+  if (!srcResp.ok) throw new Error(`下载源文件失败 ${srcResp.status}: ${sourceUrl.slice(0, 80)}`);
+
+  // 2. 读取为 Buffer（Node.js fetch 返回 Web ReadableStream，转 ArrayBuffer）
+  const buffer = Buffer.from(await srcResp.arrayBuffer());
+
+  // 3. PUT 上传到 S3
+  const putResp = await fetch(uploadUrl, {
+    method: 'PUT',
+    headers: { ...headers, 'Content-Type': contentType },
+    body: buffer,
+    signal: AbortSignal.timeout(300000), // 视频最多 5 分钟
+  });
+  if (!putResp.ok) {
+    const errText = await putResp.text().catch(() => '');
+    throw new Error(`S3 上传失败 ${putResp.status}: ${errText.slice(0, 200)}`);
+  }
+}
+
+/**
  * 主发布函数：将一个已完成的 story project 发布到 X2C
+ * 正确流程：
+ *   1. 获取每集 cover + video 的 S3 预签名上传 URL
+ *   2. 流式下载 Giggle 文件 → PUT 上传到 X2C S3
+ *   3. 用 S3 public_url 调用 distribution/publish
+ *
  * @param {object} params
  *   - projectName: 项目名
  *   - idea: 项目想法（用于匹配分类和生成描述）
@@ -124,22 +157,82 @@ async function listPublished({ page = 1, pageSize = 20, status = 'all' } = {}) {
  * @returns {object} { ok, x2cProjectId, status, message }
  */
 async function publishToX2C({ projectName, idea, episodes }) {
-  // 过滤出有视频的集
-  const validEps = episodes.filter(e => e.export_url);
+  // 过滤出有视频的集，按集数升序
+  const validEps = episodes.filter(e => e.export_url).sort((a, b) => a.episode_no - b.episode_no);
   if (!validEps.length) throw new Error('No valid episodes with export_url');
 
   const category = await matchCategory(idea || projectName);
-  const coverUrl = validEps[0].cover_url || '';
-  const videoUrls = validEps.map(e => e.export_url);
   const title = projectName.slice(0, 50);
   const description = (idea || projectName).slice(0, 500);
+
+  // ── Step 1: 批量获取所有集的 cover + video 上传 URL ──
+  // 每集需要 1 个 cover（若有）+ 1 个 video，一次请求拿全部
+  const fileRequests = [];
+  for (const ep of validEps) {
+    if (ep.cover_url) {
+      fileRequests.push({
+        file_type: 'cover',
+        file_name: `ep${ep.episode_no}_cover.jpg`,
+        content_type: 'image/jpeg',
+        _epNo: ep.episode_no,
+        _kind: 'cover',
+      });
+    }
+    fileRequests.push({
+      file_type: 'video',
+      file_name: `ep${ep.episode_no}.mp4`,
+      content_type: 'video/mp4',
+      _epNo: ep.episode_no,
+      _kind: 'video',
+    });
+  }
+
+  // upload-url 接口不接受私有字段，去掉 _epNo/_kind 再发
+  const uploadUrlResp = await x2cApi('distribution/upload-url', {
+    files: fileRequests.map(({ _epNo, _kind, ...rest }) => rest),
+  });
+  if (!uploadUrlResp.success || !Array.isArray(uploadUrlResp.uploads)) {
+    throw new Error('获取 S3 上传 URL 失败: ' + JSON.stringify(uploadUrlResp).slice(0, 200));
+  }
+
+  // 将 uploads 按顺序和 fileRequests 对齐（接口返回顺序与请求顺序一致）
+  const uploads = uploadUrlResp.uploads;
+  if (uploads.length !== fileRequests.length) {
+    throw new Error(`upload-url 返回数量不匹配: 期望 ${fileRequests.length}，实际 ${uploads.length}`);
+  }
+
+  // ── Step 2: 逐集上传 cover + video 到 S3 ──
+  const epPublicUrls = {}; // { [epNo]: { coverPublicUrl, videoPublicUrl } }
+  for (let i = 0; i < fileRequests.length; i++) {
+    const req = fileRequests[i];
+    const slot = uploads[i];
+    const ep = validEps.find(e => e.episode_no === req._epNo);
+    const sourceUrl = req._kind === 'cover' ? ep.cover_url : ep.export_url;
+
+    console.log(`[X2C Upload] EP${req._epNo} ${req._kind} → S3 (${(slot.public_url || '').slice(0, 60)}...)`);
+    await uploadStreamToS3(sourceUrl, slot.upload_url, slot.upload_headers, req.content_type);
+    console.log(`[X2C Upload] EP${req._epNo} ${req._kind} ✓`);
+
+    if (!epPublicUrls[req._epNo]) epPublicUrls[req._epNo] = {};
+    epPublicUrls[req._epNo][req._kind === 'cover' ? 'coverPublicUrl' : 'videoPublicUrl'] = slot.public_url;
+  }
+
+  // ── Step 3: 组装 publish 参数，使用 S3 public_url ──
+  const coverPublicUrl = epPublicUrls[validEps[0].episode_no]?.coverPublicUrl
+    || epPublicUrls[validEps[0].episode_no]?.videoPublicUrl  // 无封面时 fallback
+    || '';
+  const videoPublicUrls = validEps
+    .map(ep => epPublicUrls[ep.episode_no]?.videoPublicUrl)
+    .filter(Boolean);
+
+  if (!videoPublicUrls.length) throw new Error('所有视频上传后无 public_url，终止发布');
 
   const res = await x2cApi('distribution/publish', {
     title,
     description,
     category_id: category.id,
-    cover_url: coverUrl,
-    video_urls: videoUrls,
+    cover_url: coverPublicUrl,
+    video_urls: videoPublicUrls,
     enable_prediction: false,
   });
 
@@ -148,7 +241,7 @@ async function publishToX2C({ projectName, idea, episodes }) {
     x2cProjectId: res.project_id || res.id || '',
     status: res.status || 'pending_review',
     category: category.name,
-    message: `已发布到 X2C（${category.name}），等待审核`,
+    message: `已发布到 X2C（${category.name}），${validEps.length} 集视频已上传到 S3`,
     raw: res,
   };
 }
