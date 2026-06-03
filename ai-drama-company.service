@@ -1,0 +1,17 @@
+[Unit]
+Description=AI Drama Company Agent (Node.js)
+After=network.target
+
+[Service]
+Type=simple
+User=storyclaw
+WorkingDirectory=/home/storyclaw/.openclaw/workspace-ai-drama-company
+EnvironmentFile=/home/storyclaw/.openclaw/workspace-ai-drama-company/.env
+ExecStart=/home/storyclaw/.nvm/versions/node/v22.22.1/bin/node skills/giggle-openclaw-drama-agent/scripts/server.js
+Restart=always
+RestartSec=5
+StandardOutput=append:/home/storyclaw/.claw/ai-drama.log
+StandardError=append:/home/storyclaw/.claw/ai-drama.log
+
+[Install]
+WantedBy=multi-user.target
