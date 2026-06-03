@@ -422,28 +422,37 @@ app.post('/api/agent/projects', async (req, res) => {
     const project0 = await getStoryProject(db, projectUuid);
     res.json({ ok: true, data: { project: project0, episodes: [], generating: true } });
 
-    // 异步：先命名（等待完成）→ 再并行触发剧本生成 + 风格匹配
+    // 异步：① 立刻创建 script_run_id 供前端轮询 → ② AI命名 → ③ 剧本生成 + 风格匹配
     (async () => {
-      // Step1: AI 命名（串行，确保项目名称在剧本生成前确定）
+      // Step0: 立刻创建 script_run_id，写入 DB，前端从此刻起就能看到日志
+      const { randomUUID } = require('crypto');
+      const earlyRunId = randomUUID();
+      await createRun(db, { runId: earlyRunId, idea: idea.trim(), projectName: `[生成中] ${projectUuid.slice(0,8)}` });
+      db.prepare('UPDATE story_projects SET script_run_id=?, updated_at=? WHERE project_uuid=?')
+        .run(earlyRunId, new Date().toISOString(), projectUuid);
+      await addLog(db, { runId: earlyRunId, stage: 'system', tagClass: 'system', tagText: 'SYSTEM', payload: '正在匹配风格、AI智能命名、准备生成剧本，请稍候...' });
+
+      // Step1: AI 命名（串行，命名完成后再生成剧本）
       if (!userInputName) {
         try {
-          const scriptRunId = db.prepare('SELECT script_run_id FROM story_projects WHERE project_uuid=?').get(projectUuid)?.script_run_id;
-          if (scriptRunId) addLog(db, { runId: scriptRunId, stage: 'system', tagClass: 'system', tagText: 'SYSTEM', payload: '[AIName] 正在分析内容，AI 智能命名中...' }).catch(() => {});
+          await addLog(db, { runId: earlyRunId, stage: 'system', tagClass: 'system', tagText: 'SYSTEM', payload: '[AIName] 正在分析内容，AI 智能命名中...' });
           const aiName = await aiGenerateProjectName(idea.trim());
           if (aiName) {
             db.prepare('UPDATE story_projects SET name=?, updated_at=? WHERE project_uuid=?')
               .run(aiName, new Date().toISOString(), projectUuid);
             console.log('[AIName] project name set to:', aiName);
-            const scriptRunId2 = db.prepare('SELECT script_run_id FROM story_projects WHERE project_uuid=?').get(projectUuid)?.script_run_id;
-            if (scriptRunId2) addLog(db, { runId: scriptRunId2, stage: 'system', tagClass: 'system', tagText: 'SYSTEM', payload: `[AIName] 项目命名完成：${aiName}` }).catch(() => {});
+            await addLog(db, { runId: earlyRunId, stage: 'system', tagClass: 'system', tagText: 'SYSTEM', payload: `[AIName] 项目命名完成：${aiName}` });
           }
         } catch (e) {
           console.warn('[AIName] failed:', e.message);
+          await addLog(db, { runId: earlyRunId, stage: 'system', tagClass: 'system', tagText: 'SYSTEM', payload: `[AIName] 命名失败，使用原始内容：${e.message}` }).catch(() => {});
         }
       }
 
       // Step2: 命名完成后，并行触发剧本生成 + 风格匹配
-      triggerScriptGeneration(projectUuid, idea.trim(), finalEpisodeCount);
+      // triggerScriptGeneration 内部会创建新的 script_run_id 并覆盖写入 DB
+      // 这里先把 earlyRunId 传给它，让剧本日志继续写到同一个 run
+      triggerScriptGeneration(projectUuid, idea.trim(), finalEpisodeCount, earlyRunId);
 
       matchStyleId(idea.trim()).then(styleId => {
         db.prepare('UPDATE story_projects SET style_id=?, updated_at=? WHERE project_uuid=?')
@@ -783,17 +792,19 @@ async function matchStyleId(idea) {
   return 146; // 默认写实风格(都市剧最常见)
 }
 
-function triggerScriptGeneration(projectUuid, idea, episodeCount) {
+function triggerScriptGeneration(projectUuid, idea, episodeCount, existingRunId) {
   if (_generatingSet.has(projectUuid)) {
     console.log(`[AI Script] already generating ${projectUuid}, skip`);
     return;
   }
   _generatingSet.add(projectUuid);
 
-  // 创建 script_run_id,写入 runs 表,供前端轮询日志
-  const scriptRunId = randomUUID();
-  createRun(db, { runId: scriptRunId, idea, projectName: `[剧本生成] ${projectUuid.slice(0,8)}` }).catch(() => {});
-  db.prepare('UPDATE story_projects SET script_run_id=? WHERE project_uuid=?').run(scriptRunId, projectUuid);
+  // 复用已有 runId（命名阶段提前创建），或新建
+  const scriptRunId = existingRunId || randomUUID();
+  if (!existingRunId) {
+    createRun(db, { runId: scriptRunId, idea, projectName: `[剧本生成] ${projectUuid.slice(0,8)}` }).catch(() => {});
+    db.prepare('UPDATE story_projects SET script_run_id=? WHERE project_uuid=?').run(scriptRunId, projectUuid);
+  }
 
   const scriptPath = require('path').join(__dirname, 'generate_script.js');
   const child = spawn(process.execPath, [scriptPath, projectUuid, idea, String(episodeCount || 1), scriptRunId], {
