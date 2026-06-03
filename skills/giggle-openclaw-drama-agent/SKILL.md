@@ -110,24 +110,28 @@ tail -f ~/.claw/ai-drama.log
 
 ## Dashboard 访问
 
-服务启动后，访问 `http://localhost:3000` 即可使用 Dashboard。
+### 本地访问
+服务启动后，访问 `http://localhost:3000`。
 
-**内网穿透（远程访问）**：如需从外部网络访问，推荐使用 [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) 或 [frp](https://github.com/fatedier/frp)：
+### 外网访问（ClawLN 隧道，推荐）
+
+本系统通过 **StoryClaw ClawLN** 内置隧道提供外网访问，无需任何额外配置：
+
+1. 安装并启动 [OpenClaw](https://openclaw.ai)
+2. 运行 `node setup.js`，脚本自动读取你的设备 ID 并输出外网链接
+3. 访问链接格式：`https://device-{你的设备ID}.clawln.app`
 
 ```bash
-# Cloudflare Tunnel（推荐，免费）
-cloudflared tunnel --url http://localhost:3000
-
-# frp 客户端配置示例（frpc.ini）
-[common]
-server_addr = your-server.com
-server_port = 7000
-
-[ai-drama]
-type = http
-local_port = 3000
-custom_domains = drama.yourdomain.com
+node setup.js
+# 输出示例：
+# ✓ 外网访问：https://device-sco1s33iohwj.clawln.app
 ```
+
+**前提**：OpenClaw Gateway 保持运行（`openclaw gateway status` 查看状态）。
+
+> **原理**：OpenClaw 为每台设备分配唯一的 `fqdn`（存储在 `~/.openclaw/device-info.json`），  
+> ClawLN 云代理自动将 `device-{fqdn}.clawln.app` 反向代理到你本机的 Gateway 端口。  
+> 设备 ID 固定不变，链接永久有效，无需配置 DNS 或防火墙。
 
 ---
 
