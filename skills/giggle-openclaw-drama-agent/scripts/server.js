@@ -318,33 +318,41 @@ function quickExtractName(idea) {
  * 调用 Gateway LLM 智能生成项目名称（20秒超时），失败则本地快速提取
  */
 async function aiGenerateProjectName(idea) {
+  // 直接调用 storyclaw anthropic API（绕过 Gateway，速度快稳定）
+  const BASE_URL = 'https://llm-ap.gqapi.com';
+  const API_KEY = 'duk2smmlshoi0el5nh7exyvdybesj444';
   try {
-    const GATEWAY = process.env.OPENCLAW_GATEWAY_URL || 'http://localhost:18789';
-    const PASS = process.env.OPENCLAW_GATEWAY_PASSWORD || '';
-    const resp = await fetch(`${GATEWAY}/v1/chat/completions`, {
+    const resp = await fetch(`${BASE_URL}/v1/messages`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(PASS ? { Authorization: `Bearer ${PASS}` } : {}) },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
       body: JSON.stringify({
-        model: 'openclaw',
+        model: 'claude-sonnet-4-6',
         max_tokens: 30,
-        messages: [
-          { role: 'system', content: '你是一个短剧命名专家。根据用户描述，提炼出一个简洁有力的短剧名称，4-10个字，不加书名号，不加标点，只输出名称本身。' },
-          { role: 'user', content: idea },
-        ],
+        system: '你是短剧命名专家。根据用户描述，提炼一个简洁有力的短剧名称，4-10个汉字，只输出名称本身，不加书名号和标点。',
+        messages: [{ role: 'user', content: idea.slice(0, 300) }],
       }),
-      signal: AbortSignal.timeout(20000),
+      signal: AbortSignal.timeout(30000),
     });
+    if (!resp.ok) throw new Error(`API ${resp.status}`);
     const data = await resp.json();
-    const name = (data.choices?.[0]?.message?.content || '').trim().replace(/[《》「」【】""''\n]/g, '');
-    if (name && name.length >= 2) { console.log('[AIName] gateway generated:', name); return name; }
-    // Gateway 无效响应，fallback 本地提取
-    const fallback = quickExtractName(idea);
-    if (fallback) console.log('[AIName] fallback to quick extract:', fallback);
-    return fallback;
+    const raw = (data.content?.[0]?.text || '').trim();
+    const name = raw.replace(/[《》「」【】""''<>\n\r]/g, '').replace(/\s+/g, '').trim();
+    if (name && name.length >= 2 && name.length <= 20) {
+      console.log(`[AIName] claude generated: ${name}`);
+      return name;
+    }
+    console.warn('[AIName] claude returned invalid name:', JSON.stringify(raw));
   } catch (e) {
-    console.warn('[AIName] gateway failed:', e.message, '- using quick extract');
-    return quickExtractName(idea);
+    console.warn('[AIName] claude failed:', e.message);
   }
+  // fallback 本地快速提取
+  const fallback = quickExtractName(idea);
+  console.warn('[AIName] fallback to quickExtract:', fallback);
+  return fallback;
 }
 
 // 集数配置
@@ -414,29 +422,29 @@ app.post('/api/agent/projects', async (req, res) => {
     const project0 = await getStoryProject(db, projectUuid);
     res.json({ ok: true, data: { project: project0, episodes: [], generating: true } });
 
-    // 异步:AI命名 + 风格匹配 + 剧本生成 并行执行
+    // 异步：先命名（等待完成）→ 再并行触发剧本生成 + 风格匹配
     (async () => {
-      // 先触发剧本生成,让前端立刻看到进度
-      triggerScriptGeneration(projectUuid, idea.trim(), finalEpisodeCount);
-
-      // AI 命名(如果用户没有输入名称)
+      // Step1: AI 命名（串行，确保项目名称在剧本生成前确定）
       if (!userInputName) {
-        const scriptRunId = db.prepare('SELECT script_run_id FROM story_projects WHERE project_uuid=?').get(projectUuid)?.script_run_id;
-        // 写一条日志提示正在命名
-        if (scriptRunId) addLog(db, { runId: scriptRunId, stage: 'system', tagClass: 'system', tagText: 'SYSTEM', payload: '[AIName] 正在分析内容,AI 智能命名中...' }).catch(() => {});
-        aiGenerateProjectName(idea.trim()).then(aiName => {
+        try {
+          const scriptRunId = db.prepare('SELECT script_run_id FROM story_projects WHERE project_uuid=?').get(projectUuid)?.script_run_id;
+          if (scriptRunId) addLog(db, { runId: scriptRunId, stage: 'system', tagClass: 'system', tagText: 'SYSTEM', payload: '[AIName] 正在分析内容，AI 智能命名中...' }).catch(() => {});
+          const aiName = await aiGenerateProjectName(idea.trim());
           if (aiName) {
             db.prepare('UPDATE story_projects SET name=?, updated_at=? WHERE project_uuid=?')
               .run(aiName, new Date().toISOString(), projectUuid);
-            console.log('[AIName] updated project name to:', aiName);
-            // 写日志通知前端
-            const runId2 = db.prepare('SELECT script_run_id FROM story_projects WHERE project_uuid=?').get(projectUuid)?.script_run_id;
-            if (runId2) addLog(db, { runId: runId2, stage: 'system', tagClass: 'system', tagText: 'SYSTEM', payload: `[AIName] 项目命名完成:${aiName}` }).catch(() => {});
+            console.log('[AIName] project name set to:', aiName);
+            const scriptRunId2 = db.prepare('SELECT script_run_id FROM story_projects WHERE project_uuid=?').get(projectUuid)?.script_run_id;
+            if (scriptRunId2) addLog(db, { runId: scriptRunId2, stage: 'system', tagClass: 'system', tagText: 'SYSTEM', payload: `[AIName] 项目命名完成：${aiName}` }).catch(() => {});
           }
-        }).catch(e => console.warn('[AIName] async failed:', e.message));
+        } catch (e) {
+          console.warn('[AIName] failed:', e.message);
+        }
       }
 
-      // 并行匹配风格
+      // Step2: 命名完成后，并行触发剧本生成 + 风格匹配
+      triggerScriptGeneration(projectUuid, idea.trim(), finalEpisodeCount);
+
       matchStyleId(idea.trim()).then(styleId => {
         db.prepare('UPDATE story_projects SET style_id=?, updated_at=? WHERE project_uuid=?')
           .run(styleId, new Date().toISOString(), projectUuid);
