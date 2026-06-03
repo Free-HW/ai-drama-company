@@ -674,27 +674,39 @@
   async function pollPublishProgress(projectUuid, publishRunId, btn) {
     let lastId = 0;
     let done = false;
-    // 初始化 lastId 为当前最新，避免重放历史
-    try {
-      const init = await fetch(`/api/agent/status/${publishRunId}?since_id=0`);
-      const initJson = await init.json();
-      if (initJson.ok && initJson.logs?.length) {
-        lastId = initJson.logs[initJson.logs.length - 1].id;
-      }
-    } catch (_) {}
+
+    // 等待 publishRunId 写入 DB（后台异步，最多等 10 秒，每秒重试一次）
+    for (let i = 0; i < 10; i++) {
+      await new Promise(r => setTimeout(r, 1000));
+      try {
+        const init = await fetch(`/api/agent/status/${publishRunId}?since_id=0`);
+        if (!init.ok) continue; // 404 时继续等
+        const ct = init.headers.get('content-type') || '';
+        if (!ct.includes('application/json')) continue; // 非 JSON 继续等
+        const initJson = await init.json();
+        if (initJson.ok) {
+          // run 已就绪，从 lastId=0 开始（不跳过，要显示所有进度日志）
+          lastId = 0;
+          break;
+        }
+      } catch (_) { /* 继续等 */ }
+    }
 
     while (!done) {
       await new Promise(r => setTimeout(r, 2000));
       try {
         const r = await fetch(`/api/agent/status/${publishRunId}?since_id=${lastId}`);
+        if (!r.ok) continue;
+        const ct = r.headers.get('content-type') || '';
+        if (!ct.includes('application/json')) continue;
         const j = await r.json();
         if (!j.ok) break;
-        // 追加新日志
+        // 追加新日志到控制台
         for (const l of (j.logs || [])) {
           appendLine(l.tagClass || 'system', l.tagText || 'SYSTEM', l.payload || '', l.stage || 'distribute');
           lastId = Math.max(lastId, Number(l.id || 0));
         }
-        // 检查是否完成
+        // 检查完成状态
         const runStatus = j.run?.status;
         if (runStatus === 'completed') {
           appendLine('system', 'SYSTEM', `━━━ X2C 发布完成 ━━━`, 'system');
@@ -707,7 +719,7 @@
           if (btn) { btn.disabled = false; btn.textContent = '📤 发布到 X2C'; }
           done = true;
         }
-      } catch (_) { /* 网络抖动忽略，继续轮询 */ }
+      } catch (_) { /* 网络抖动，继续轮询 */ }
     }
   }
 
