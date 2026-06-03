@@ -653,17 +653,61 @@
         headers: { 'Content-Type': 'application/json' },
       });
       const json = await resp.json();
-      if (json.ok) {
-        appendLine('system', 'SYSTEM', `[X2C] 手动发布成功：${json.message || ''}`, 'system');
-        await renderStoryEpisodes(projectUuid);
-        await refreshStoryWorkspace();
-      } else {
-        appendLine('system', 'SYSTEM', `[X2C] 手动发布失败：${json.error || ''}`, 'system');
+      if (!resp.ok || !json.ok) {
+        appendLine('system', 'SYSTEM', `[X2C] 发布失败：${json.error || ''}`, 'system');
         if (btn) { btn.disabled = false; btn.textContent = '📤 发布到 X2C'; }
+        return;
+      }
+      // 后台异步发布，用 publishRunId 轮询进度
+      const publishRunId = json.publishRunId;
+      appendLine('system', 'SYSTEM', `[X2C] 发布任务已启动，正在上传视频到 X2C...`, 'system');
+      if (publishRunId) {
+        await pollPublishProgress(projectUuid, publishRunId, btn);
       }
     } catch (e) {
-      appendLine('system', 'SYSTEM', `[X2C] 手动发布异常：${e.message}`, 'system');
+      appendLine('system', 'SYSTEM', `[X2C] 发布异常：${e.message}`, 'system');
       if (btn) { btn.disabled = false; btn.textContent = '📤 发布到 X2C'; }
+    }
+  }
+
+  // 轮询 X2C 发布进度，实时追加日志到控制台
+  async function pollPublishProgress(projectUuid, publishRunId, btn) {
+    let lastId = 0;
+    let done = false;
+    // 初始化 lastId 为当前最新，避免重放历史
+    try {
+      const init = await fetch(`/api/agent/status/${publishRunId}?since_id=0`);
+      const initJson = await init.json();
+      if (initJson.ok && initJson.logs?.length) {
+        lastId = initJson.logs[initJson.logs.length - 1].id;
+      }
+    } catch (_) {}
+
+    while (!done) {
+      await new Promise(r => setTimeout(r, 2000));
+      try {
+        const r = await fetch(`/api/agent/status/${publishRunId}?since_id=${lastId}`);
+        const j = await r.json();
+        if (!j.ok) break;
+        // 追加新日志
+        for (const l of (j.logs || [])) {
+          appendLine(l.tagClass || 'system', l.tagText || 'SYSTEM', l.payload || '', l.stage || 'distribute');
+          lastId = Math.max(lastId, Number(l.id || 0));
+        }
+        // 检查是否完成
+        const runStatus = j.run?.status;
+        if (runStatus === 'completed') {
+          appendLine('system', 'SYSTEM', `━━━ X2C 发布完成 ━━━`, 'system');
+          if (btn) { btn.disabled = true; btn.textContent = '✅ 已发布 X2C'; }
+          await renderStoryEpisodes(projectUuid);
+          await refreshStoryWorkspace();
+          done = true;
+        } else if (runStatus === 'failed') {
+          appendLine('system', 'SYSTEM', `━━━ X2C 发布失败 ━━━`, 'system');
+          if (btn) { btn.disabled = false; btn.textContent = '📤 发布到 X2C'; }
+          done = true;
+        }
+      } catch (_) { /* 网络抖动忽略，继续轮询 */ }
     }
   }
 

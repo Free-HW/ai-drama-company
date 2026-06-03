@@ -260,4 +260,90 @@ async function getVideoStats(projectIds) {
   return res.data || [];
 }
 
-module.exports = { publishToX2C, getWalletBalance, listPublished, queryPublished, getCategories, matchCategory, getVideoStats };
+/**
+ * 带进度回调的发布函数（供 server.js 调用，进度写入 run_logs 供前端轮询）
+ * @param {object} params - 同 publishToX2C，额外接受 onProgress(tagClass, tagText, payload)
+ */
+async function publishToX2CWithProgress({ projectName, idea, episodes, onProgress }) {
+  const emit = onProgress || (() => {});
+
+  const validEps = episodes.filter(e => e.export_url).sort((a, b) => a.episode_no - b.episode_no);
+  if (!validEps.length) throw new Error('No valid episodes with export_url');
+
+  const category = await matchCategory(idea || projectName);
+  emit('agent-e', 'AGENT-E', `[X2C] 分类匹配完成：${category.name}`);
+
+  const title = projectName.slice(0, 50);
+  const description = (idea || projectName).slice(0, 500);
+
+  // Step 1: 获取上传 URL（1 cover + N videos）
+  const firstEp = validEps[0];
+  const fileRequests = [];
+  if (firstEp.cover_url) {
+    fileRequests.push({ file_type: 'cover', file_name: 'cover.jpg', content_type: 'image/jpeg', _epNo: firstEp.episode_no, _kind: 'cover' });
+  }
+  for (const ep of validEps) {
+    fileRequests.push({ file_type: 'video', file_name: `ep${ep.episode_no}.mp4`, content_type: 'video/mp4', _epNo: ep.episode_no, _kind: 'video' });
+  }
+
+  emit('agent-e', 'AGENT-E', `[X2C] 申请上传地址（1 封面 + ${validEps.length} 视频）...`);
+  const uploadUrlResp = await x2cApi('distribution/upload-url', {
+    files: fileRequests.map(({ _epNo, _kind, ...rest }) => rest),
+  });
+  if (!uploadUrlResp.success || !Array.isArray(uploadUrlResp.uploads)) {
+    throw new Error('获取 S3 上传 URL 失败: ' + JSON.stringify(uploadUrlResp).slice(0, 200));
+  }
+  const uploads = uploadUrlResp.uploads;
+  if (uploads.length !== fileRequests.length) {
+    throw new Error(`upload-url 返回数量不匹配: 期望 ${fileRequests.length}，实际 ${uploads.length}`);
+  }
+  emit('agent-e', 'AGENT-E', `[X2C] 上传地址获取成功，开始上传文件...`);
+
+  // Step 2: 逐个上传
+  let coverPublicUrl = '';
+  const videoPublicUrls = [];
+
+  for (let i = 0; i < fileRequests.length; i++) {
+    const req = fileRequests[i];
+    const slot = uploads[i];
+    const ep = validEps.find(e => e.episode_no === req._epNo);
+    const sourceUrl = req._kind === 'cover' ? ep.cover_url : ep.export_url;
+    const label = req._kind === 'cover' ? `封面` : `EP${req._epNo} 视频`;
+    const progress = req._kind === 'cover' ? '' : ` (${videoPublicUrls.length + 1}/${validEps.length})`;
+
+    emit('agent-e', 'AGENT-E', `[X2C] 上传中 ${label}${progress}...`);
+    await uploadStreamToS3(sourceUrl, slot.upload_url, slot.upload_headers, req.content_type);
+    emit('agent-e', 'AGENT-E', `[X2C] ✓ ${label}${progress} 上传完成`);
+
+    if (req._kind === 'cover') {
+      coverPublicUrl = slot.public_url;
+    } else {
+      videoPublicUrls.push(slot.public_url);
+    }
+  }
+
+  if (!videoPublicUrls.length) throw new Error('所有视频上传后无 public_url，终止发布');
+  if (!coverPublicUrl) coverPublicUrl = videoPublicUrls[0];
+
+  // Step 3: 发布
+  emit('agent-e', 'AGENT-E', `[X2C] 全部上传完成，正在提交发布请求...`);
+  const res = await x2cApi('distribution/publish', {
+    title,
+    description,
+    category_id: category.id,
+    cover_url: coverPublicUrl,
+    video_urls: videoPublicUrls,
+    enable_prediction: false,
+  });
+
+  return {
+    ok: true,
+    x2cProjectId: res.project_id || res.id || '',
+    status: res.status || 'pending_review',
+    category: category.name,
+    message: `已发布到 X2C（${category.name}），${validEps.length} 集视频已上传到 S3`,
+    raw: res,
+  };
+}
+
+module.exports = { publishToX2C, publishToX2CWithProgress, getWalletBalance, listPublished, queryPublished, getCategories, matchCategory, getVideoStats };
