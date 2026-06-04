@@ -1,207 +1,92 @@
-# AI Drama Company Agent — BOOTSTRAP.md
+# AI Drama Company — Bootstrap（首次启动自动执行）
 
-## 概述
+## 强制初始化流程
 
-AI Drama Company 是一个基于 OpenClaw 的 AI 短剧生产 Agent。用户输入一句创意，系统自动调用 LLM 生成完整多集剧本，并通过 Giggle API 完成角色、分镜、视频制作全流程。
-
----
-
-## 环境要求
-
-| 依赖 | 版本 | 说明 |
-|------|------|------|
-| Node.js | ≥ 18 | 运行 server.js |
-| OpenClaw Gateway | 任意 | 提供 LLM 接口 |
-| Giggle API Key | — | 视频制作平台 |
+每次 Agent 被激活，**必须立即、自动执行以下全部步骤**，不等待用户提问，不跳过任何步骤。
 
 ---
 
-## 安装步骤
-
-### 1. 克隆仓库
+### Step 1 — 检查服务状态
 
 ```bash
-git clone https://github.com/Free-HW/ai-drama-company.git
-cd ai-drama-company
-npm install
+curl -s http://localhost:3000/health
 ```
 
-> ⚠️ 系统自带的 `sqlite3` 包可能与 glibc 版本不兼容，安装脚本已自动替换为 `better-sqlite3`。
-> 如遇 `GLIBC_2.38 not found` 错误，手动执行：
-> ```bash
-> npm install better-sqlite3
-> ```
+- 返回 `{"ok":true}` → 继续 Step 2
+- 连接失败 → 提示用户：服务未启动，请先运行 `npm start` 或 `sudo systemctl start ai-drama-company`
 
-### 2. 配置环境变量
+---
+
+### Step 2 — 读取外网访问地址
 
 ```bash
-cp .env.example .env
+cat ~/.openclaw/device-info.json
 ```
 
-编辑 `.env`，填入以下字段：
+从 `fqdn` 字段构建外网地址：`https://device-{fqdn}.clawln.app`
 
-```env
-PORT=3001
-GIGGLE_BASE_URL=https://giggle.pro
-GIGGLE_API_KEY=你的_Giggle_API_Key
-GIGGLE_AUTH_MODE=x-auth
+**必须同时展示两个地址：**
+- 本地地址：`http://localhost:3000`
+- 外网地址：`https://device-{fqdn}.clawln.app`（来自 device-info.json）
 
-# OpenClaw Gateway（用于 AI 剧本生成）
-OPENCLAW_GATEWAY_URL=http://localhost:18789
-OPENCLAW_GATEWAY_PASSWORD=你的_Gateway_密码
-```
+如果 device-info.json 不存在，提示用户安装 OpenClaw 以获得外网访问能力。
 
-**获取 Gateway 密码：**
-```bash
-cat ~/.openclaw/openclaw.json | python3 -c "import json,sys; print(json.load(sys.stdin)['gateway']['auth']['password'])"
-```
+---
 
-### 3. 启用 OpenClaw Gateway LLM 接口
+### Step 3 — 检查 API Keys 配置
 
-在 `~/.openclaw/openclaw.json` 中添加：
+检查工作目录（`~/.openclaw/workspace-ai-drama-company/.env`）是否存在，以及以下必填项是否已填写（非占位符）：
 
-```json
-{
-  "gateway": {
-    "http": {
-      "endpoints": {
-        "chatCompletions": { "enabled": true }
-      }
-    }
-  }
-}
-```
+| 变量 | 说明 |
+|------|------|
+| `GIGGLE_API_KEY` | Giggle 视频制作 Key，来自 giggle.pro 开发者后台 |
+| `X2C_API_KEY` | X2C 发布平台 Key，来自 X2C 账号设置 |
+| `OPENCLAW_GATEWAY_PASSWORD` | OpenClaw Gateway 密码 |
+| `STORYCLAW_API_KEY` | StoryClaw LLM Key，用于 AI 命名 |
 
-然后重启 Gateway：
-```bash
-openclaw gateway restart
-```
+**如果任意 Key 未配置或值为占位符**（如 `your_xxx_key_here`）：
+1. 逐项询问用户提供
+2. 写入 `.env` 文件
+3. 重启服务：`sudo systemctl restart ai-drama-company`
 
-验证：
-```bash
-curl http://localhost:18789/v1/models -H "Authorization: Bearer 你的密码"
-```
+---
 
-### 4. 初始化数据库
+### Step 4 — 初始化数据库（新安装时）
+
+检查 `outputs/drama_agent.db` 是否存在：
 
 ```bash
-npm run db:init
+ls ~/.openclaw/workspace-ai-drama-company/outputs/drama_agent.db
 ```
 
-### 5. 启动服务
+不存在则执行：
 
 ```bash
-npm start
-# 或开发模式（需安装 nodemon）
-npm run dev
-```
-
-访问 `http://localhost:3001`
-
-### 6. 配置 systemd 自动重启（推荐）
-
-```bash
-sudo tee /etc/systemd/system/ai-drama-company.service << 'EOF'
-[Unit]
-Description=AI Drama Company Agent
-After=network.target
-
-[Service]
-Type=simple
-User=YOUR_USER
-WorkingDirectory=/path/to/ai-drama-company
-EnvironmentFile=/path/to/ai-drama-company/.env
-ExecStart=/usr/bin/node skills/giggle-openclaw-drama-agent/scripts/server.js
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-sudo systemctl daemon-reload
-sudo systemctl enable --now ai-drama-company.service
-```
-
-### 7. 公网访问（可选）
-
-使用 Cloudflare Tunnel 暴露服务：
-
-```bash
-# 临时隧道（地址每次重启会变）
-cloudflared tunnel --url http://localhost:3001
-
-# 永久隧道（需要 Cloudflare 账号）
-cloudflared tunnel create ai-drama
-cloudflared tunnel route dns ai-drama your-domain.com
+cd ~/.openclaw/workspace-ai-drama-company && node skills/giggle-openclaw-drama-agent/scripts/init_db.js
 ```
 
 ---
 
-## 已知问题与修复记录
+### Step 5 — 输出初始化完成信息
 
-| 问题 | 根因 | 修复方案 |
-|------|------|---------|
-| `sqlite3` GLIBC 不兼容 | 预编译包依赖 glibc 2.38 | 替换为 `better-sqlite3`，`db.js` 已适配同步 API |
-| `GET /` 返回 404 | Express 5 `sendFile` 需要 `root` 选项 | 改为 `res.sendFile('dashboard.html', { root: assetsDir })` |
-| 剧本生成为模板占位内容 | 原 `buildEpisodePlan` 为硬编码模板 | 改为调用 OpenClaw Gateway LLM 生成真实剧本 |
-| Giggle `storyExpansion` 只支持单集 | API 限制 | 不使用该接口，改用本地 LLM |
-
----
-
-## 核心架构
+以下格式展示给用户：
 
 ```
-用户输入创意
-    ↓
-POST /api/agent/projects
-    ↓ 立即返回 status=generating
-后台异步调用 buildEpisodePlanAI()
-    ↓
-调用 OpenClaw Gateway /v1/chat/completions
-    ↓ LLM 生成完整多集剧本（JSON 格式）
-写入 SQLite project_episodes 表
-    ↓ status=planned
-前端每 5 秒轮询，自动刷新显示剧本
+✅ AI Drama Company 已就绪
+
+📺 Dashboard 访问地址：
+   本地：http://localhost:3000
+   外网：https://device-{fqdn}.clawln.app  ← 用这个地址在任何设备访问
+
+🎬 开始你的第一部短剧：
+   直接告诉我一句创意，例如："霸道总裁爱上灰姑娘，共10集"
+   我会自动完成命名、剧本生成、视频制作、X2C发布的全流程。
 ```
 
-### 剧本生成降级策略
-
-1. **优先**：调用 OpenClaw Gateway LLM（`openclaw` 模型）
-2. **降级**：`buildLocalScriptFallback()` 生成结构化占位剧本
-
 ---
 
-## API 接口说明
+## 重要说明
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/health` | 健康检查 |
-| POST | `/api/agent/projects` | 创建项目，异步生成剧本 |
-| GET | `/api/agent/projects` | 列出所有项目 |
-| GET | `/api/agent/projects/:uuid` | 获取项目详情（含集列表） |
-| POST | `/api/agent/projects/:uuid/auto-run` | **全剧自动流水线**（推荐） |
-| POST | `/api/agent/projects/:uuid/episodes/:no/run` | 单集手动触发 |
-| POST | `/api/agent/projects/:uuid/regenerate-script` | 重新生成剧本 |
-| GET | `/api/agent/projects/:uuid/shots?episode_no=N` | 获取某集分镜（实时从 Giggle 拉取） |
-| GET | `/api/agent/status/:runId?since_id=N` | 查询制作进度 + 增量日志 |
-
----
-
-## 前端功能
-
-- 创建项目后自动轮询剧本生成状态
-- 每个分集卡片支持点击「📄 查看剧本」弹窗展示完整剧本
-- 剧本生成中显示等待提示，完成后自动刷新
-
----
-
-## 当前功能状态
-
-- [x] LLM 智能生成多集剧本（逐集写 DB，实时进度）
-- [x] 全自动流水线（Phase1 串行分镜图 → Phase2 串行视频导出）
-- [x] 角色跨集一致性（story_characters 表复用）
-- [x] 全剧风格统一（LLM 智能匹配 Giggle 7 种风格）
-- [x] 失败重试（分镜图/分镜视频均自动重试）
-- [x] 全剧完成后清理角色库
-- [x] 前端实时控制台 + 剧集详情弹窗
+- 外网地址通过 **OpenClaw ClawLN** 提供，无需额外配置，只要 OpenClaw Gateway 在运行就有效
+- 所有制作任务在后台异步执行，进度可在 Dashboard 实时查看
+- 服务通过 systemd 守护，进程不会被系统 kill（已配置 `OOMScoreAdjust=-1000`）
