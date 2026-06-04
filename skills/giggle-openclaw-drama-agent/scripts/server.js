@@ -319,8 +319,12 @@ function quickExtractName(idea) {
  */
 async function aiGenerateProjectName(idea) {
   // 直接调用 storyclaw anthropic API（绕过 Gateway，速度快稳定）
-  const BASE_URL = 'https://llm-ap.gqapi.com';
-  const API_KEY = 'duk2smmlshoi0el5nh7exyvdybesj444';
+  const BASE_URL = process.env.STORYCLAW_API_URL || 'https://llm-ap.gqapi.com';
+  const API_KEY = process.env.STORYCLAW_API_KEY || '';
+  if (!API_KEY) {
+    console.warn('[AIName] STORYCLAW_API_KEY not set, falling back to quickExtract');
+    return quickExtractName(idea);
+  }
   try {
     const resp = await fetch(`${BASE_URL}/v1/messages`, {
       method: 'POST',
