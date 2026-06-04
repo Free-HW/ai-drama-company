@@ -1,3 +1,9 @@
+---
+name: giggle-openclaw-drama-agent
+description: "AI 短剧全自动制作 + 发布 Agent。输入一句创意，自动完成 AI 命名 → 剧本生成 → Giggle 分镜/视频制作 → X2C 平台发布 → 收益追踪，全程可视化 Dashboard。"
+version: "1.0.0"
+---
+
 # SKILL: giggle-openclaw-drama-agent
 
 > **AI 短剧全自动制作 + 发布 Agent**  

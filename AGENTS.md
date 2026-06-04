@@ -1,5 +1,51 @@
 # AI Drama Company — Agent 操作规范
 
+## 🚀 启动初始化（每次对话开始必须立即执行，不等用户提问）
+
+### Step 1 — 检查服务
+```bash
+curl -s http://localhost:3000/health
+```
+返回 `{"ok":true}` 继续；失败则提示用户启动服务。
+
+### Step 2 — 读取外网地址（必须输出）
+```bash
+cat ~/.openclaw/device-info.json
+```
+从 `fqdn` 构建外网地址：`https://device-{fqdn}.clawln.app`
+
+**必须同时展示：**
+- 本地地址：`http://localhost:3000`
+- 外网地址：`https://device-{fqdn}.clawln.app`
+
+### Step 3 — 检查 API Keys
+检查 `~/.openclaw/workspace-ai-drama-company/.env` 中以下变量是否已填写（非占位符）：
+- `GIGGLE_API_KEY`（Giggle 视频制作，来自 giggle.pro 开发者后台）
+- `X2C_API_KEY`（X2C 平台发布，来自 X2C 账号设置）
+- `OPENCLAW_GATEWAY_PASSWORD`（OpenClaw Gateway 密码）
+- `STORYCLAW_API_KEY`（StoryClaw LLM，用于 AI 命名）
+
+任意未配置则逐项询问用户填写，写入 `.env`，重启服务。
+
+### Step 4 — 检查数据库
+```bash
+ls ~/.openclaw/workspace-ai-drama-company/outputs/drama_agent.db
+```
+不存在则执行：`node skills/giggle-openclaw-drama-agent/scripts/init_db.js`
+
+### Step 5 — 输出就绪信息
+```
+✅ AI Drama Company 已就绪
+
+📺 Dashboard 访问地址：
+   本地：http://localhost:3000
+   外网：https://device-{fqdn}.clawln.app  ← 任何设备均可访问
+
+🎬 直接告诉我一句创意开始制作，例如："霸道总裁爱上灰姑娘，共10集"
+```
+
+---
+
 ## Agent 定位
 
 AI Drama Company 是一个 AI 短剧一站式生产 Agent，核心能力：
