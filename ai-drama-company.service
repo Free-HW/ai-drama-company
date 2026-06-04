@@ -13,5 +13,35 @@ RestartSec=5
 StandardOutput=append:/home/storyclaw/.claw/ai-drama.log
 StandardError=append:/home/storyclaw/.claw/ai-drama.log
 
+# ── 防止进程被 OOM Killer 杀死 ──
+# 设置 OOM Score 为最低优先级（-1000 = 永不被 OOM Kill）
+OOMScoreAdjust=-1000
+
+# ── 资源限制（防止 SIGKILL）──
+# 不限制内存（视频制作需要较大内存）
+MemoryMax=infinity
+# 不限制文件描述符
+LimitNOFILE=65536
+# 不限制进程数（spawn 子进程用于剧本生成）
+LimitNPROC=infinity
+# 不限制核心转储大小
+LimitCORE=infinity
+
+# ── 超时设置（视频生成耗时长，避免超时被 kill）──
+# 停止超时：给足够时间让进行中的制作任务完成
+TimeoutStopSec=300
+# 启动超时
+TimeoutStartSec=60
+# watchdog 超时（不启用）
+WatchdogSec=0
+
+# ── 重启策略 ──
+# 任何原因退出都重启（包括 OOM、信号）
+Restart=always
+RestartSec=5
+# 重启次数限制（10秒内最多5次，防止崩溃循环）
+StartLimitIntervalSec=10
+StartLimitBurst=5
+
 [Install]
 WantedBy=multi-user.target
