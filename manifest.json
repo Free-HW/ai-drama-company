@@ -7,6 +7,8 @@
   "tags": ["short-drama", "video-production", "ai-script", "giggle", "x2c", "automation"],
   "homepage": "https://github.com/Free-HW/ai-drama-company",
   "skills": [
+    "giggle-openclaw-drama-agent",
+    "x2c-publish",
     "https://github.com/Free-HW/ai-drama-company@giggle-openclaw-drama-agent",
     "https://github.com/Free-HW/ai-drama-company@x2c-publish"
   ],
