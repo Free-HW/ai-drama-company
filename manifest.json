@@ -2,15 +2,9 @@
   "id": "ai-drama-company",
   "name": "AI Drama Company",
   "emoji": "🎬",
+  "role": "AI 短剧制作导演",
+  "tagline": "输入一句创意，全自动生成短剧并发布到 X2C 平台",
   "description": "AI 短剧全自动制作发布系统。输入一句创意，自动完成 AI 命名 → 剧本生成 → Giggle 分镜/视频制作 → X2C 平台发布 → 收益追踪，全程可视化 Dashboard。",
   "category": "content-operations",
-  "tags": ["short-drama", "video-production", "ai-script", "giggle", "x2c", "automation"],
-  "homepage": "https://github.com/Free-HW/ai-drama-company",
-  "skills": [
-    "giggle-openclaw-drama-agent",
-    "x2c-publish",
-    "https://github.com/Free-HW/ai-drama-company@giggle-openclaw-drama-agent",
-    "https://github.com/Free-HW/ai-drama-company@x2c-publish"
-  ],
-  "setup": "node setup.js"
+  "minOpenClawVersion": "2026.3.1"
 }
