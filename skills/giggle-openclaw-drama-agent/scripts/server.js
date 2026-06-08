@@ -834,20 +834,50 @@ function triggerScriptGeneration(projectUuid, idea, episodeCount, existingRunId)
   });
 }
 
-// ── 启动时恢复 generating 状态的项目 ──
+// ── 启动时恢复 generating / running 状态的项目 ──
 (async () => {
   await new Promise(r => setTimeout(r, 15000));
   try {
     const stalled = await listStoryProjects(db, 50);
     for (const p of stalled) {
-      if (!p.status || !p.status.startsWith('generating')) continue;
-      const eps = await listProjectEpisodesByUuid(db, p.project_uuid);
-      if (eps.length >= (p.episode_count || 1)) {
-        await setStoryProjectStatus(db, { projectUuid: p.project_uuid, status: 'planned' });
+      if (!p.status) continue;
+
+      // 剧本生成未完成：恢复剧本生成
+      if (p.status.startsWith('generating')) {
+        const eps = await listProjectEpisodesByUuid(db, p.project_uuid);
+        if (eps.length >= (p.episode_count || 1)) {
+          await setStoryProjectStatus(db, { projectUuid: p.project_uuid, status: 'planned' });
+          continue;
+        }
+        console.log(`[startup] resuming script generation for ${p.project_uuid}`);
+        triggerScriptGeneration(p.project_uuid, p.idea, p.episode_count || 1);
         continue;
       }
-      console.log(`[startup] resuming script generation for ${p.project_uuid}`);
-      triggerScriptGeneration(p.project_uuid, p.idea, p.episode_count || 1);
+
+      // 流水线运行中（running）：将各集 running 状态重置为 planned，重新触发全剧流水线
+      if (p.status === 'running') {
+        const eps = await listProjectEpisodesByUuid(db, p.project_uuid);
+        const allDone = eps.length > 0 && eps.every(e =>
+          e.status === 'completed' || e.status === 'failed' || e.status === 'partial_failed'
+        );
+        if (allDone) {
+          // 实际已全部完成，修正项目状态
+          const hasAnyFailed = eps.some(e => e.status === 'failed' || e.status === 'partial_failed');
+          await setStoryProjectStatus(db, { projectUuid: p.project_uuid, status: hasAnyFailed ? 'failed' : 'completed' });
+          continue;
+        }
+        // 将 running 状态的集重置为 planned，避免 Phase1 重跑时被跳过
+        for (const ep of eps) {
+          if (ep.status === 'running') {
+            db.prepare('UPDATE project_episodes SET status=?,updated_at=? WHERE project_uuid=? AND episode_no=?')
+              .run('planned', new Date().toISOString(), p.project_uuid, ep.episode_no);
+            console.log(`[startup] reset EP${ep.episode_no} running->planned for ${p.project_uuid}`);
+          }
+        }
+        console.log(`[startup] resuming pipeline for running project ${p.project_uuid}`);
+        runAutoRun(p.project_uuid).catch(e => console.error('[startup] runAutoRun failed:', e.message));
+        continue;
+      }
     }
   } catch (e) {
     console.warn('[startup] resume check failed:', e.message);
