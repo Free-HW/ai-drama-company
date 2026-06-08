@@ -589,7 +589,10 @@
         <div class="agent-card project-card ${busy} ${active}" data-project-uuid="${p.project_uuid}" style="cursor:pointer;">
           <div class="agent-head">
             <span class="agent-name">${(p.name || p.project_uuid).slice(0, 22)}</span>
-            <span class="agent-role">${storyStatusLabel(p)}</span>
+            <span class="agent-role" style="display:flex;align-items:center;gap:6px;">
+              ${storyStatusLabel(p)}
+              ${p.x2c_views > 0 ? `<span style="font-family:var(--mono);font-size:10px;color:var(--gold);opacity:.85;">▶ ${fmtNum(p.x2c_views)}</span>` : ''}
+            </span>
           </div>
           <div class="agent-task">${(p.idea || '').slice(0, 80) || '-'}</div>
           <div class="agent-meta">

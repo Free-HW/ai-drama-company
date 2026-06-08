@@ -1418,21 +1418,34 @@ app.get('/api/agent/projects/:projectUuid/video-stats', async (req, res) => {
 // ── X2C 审核状态同步（每 5 分钟查一次 processing 的项目）──
 async function syncX2cStatus() {
   try {
-    const rows = db.prepare("SELECT project_uuid, x2c_project_id FROM story_projects WHERE x2c_project_id IS NOT NULL AND x2c_status='processing'").all();
+    // 同步 processing 状态 + 已发布项目的播放量
+    const rows = db.prepare("SELECT project_uuid, x2c_project_id, x2c_status FROM story_projects WHERE x2c_project_id IS NOT NULL").all();
     if (!rows.length) return;
     for (const row of rows) {
       try {
         const res = await queryPublished(row.x2c_project_id);
         if (!res) continue;
-        // X2C 返回的 status 字段：已审核通过一般是 published/approved/active
         const remoteStatus = String(res.status || res.video_status || '').toLowerCase();
-        if (!remoteStatus || remoteStatus === 'processing' || remoteStatus === 'pending_review' || remoteStatus === 'pending') continue;
-        // 状态有变化，更新本地 DB
-        const localStatus = remoteStatus.includes('publish') || remoteStatus.includes('active') || remoteStatus.includes('approv')
-          ? 'published' : remoteStatus.includes('fail') || remoteStatus.includes('reject') ? 'failed' : remoteStatus;
-        db.prepare('UPDATE story_projects SET x2c_status=?,updated_at=? WHERE project_uuid=?')
-          .run(localStatus, new Date().toISOString(), row.project_uuid);
-        console.log(`[X2C Sync] ${row.project_uuid} 状态更新: processing -> ${localStatus}`);
+        const totalViews = Number(res.total_views || 0);
+
+        // 处理 processing 状态的项目：更新审核状态
+        if (row.x2c_status === 'processing') {
+          if (!remoteStatus || remoteStatus === 'processing' || remoteStatus === 'pending_review' || remoteStatus === 'pending') {
+            // 状态未变，但仍更新播放量
+            db.prepare('UPDATE story_projects SET x2c_views=?,updated_at=? WHERE project_uuid=?')
+              .run(totalViews, new Date().toISOString(), row.project_uuid);
+            continue;
+          }
+          const localStatus = remoteStatus.includes('publish') || remoteStatus.includes('active') || remoteStatus.includes('approv')
+            ? 'published' : remoteStatus.includes('fail') || remoteStatus.includes('reject') ? 'failed' : remoteStatus;
+          db.prepare('UPDATE story_projects SET x2c_status=?,x2c_views=?,updated_at=? WHERE project_uuid=?')
+            .run(localStatus, totalViews, new Date().toISOString(), row.project_uuid);
+          console.log(`[X2C Sync] ${row.project_uuid} 状态更新: processing -> ${localStatus} views=${totalViews}`);
+        } else {
+          // 已发布项目：只更新播放量
+          db.prepare('UPDATE story_projects SET x2c_views=?,updated_at=? WHERE project_uuid=?')
+            .run(totalViews, new Date().toISOString(), row.project_uuid);
+        }
       } catch (e) {
         console.warn(`[X2C Sync] 查询失败 ${row.x2c_project_id}:`, e.message);
       }

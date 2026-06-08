@@ -47,6 +47,7 @@ async function initSchema(db) {
       x2c_project_id TEXT,
       x2c_status TEXT,
       x2c_published_at TEXT,
+      x2c_views INTEGER DEFAULT 0,
       created_at TEXT, updated_at TEXT
     );
     CREATE TABLE IF NOT EXISTS project_bibles (
@@ -111,6 +112,11 @@ async function initSchema(db) {
       UNIQUE(story_project_uuid, name)
     );
   `);
+  // 迁移：已有安装的数据库补充新字段
+  const cols = db.prepare("PRAGMA table_info(story_projects)").all().map(c => c.name);
+  if (!cols.includes('x2c_views')) {
+    db.exec('ALTER TABLE story_projects ADD COLUMN x2c_views INTEGER DEFAULT 0');
+  }
 }
 
 async function createRun(db, { runId, idea, projectName }) {
