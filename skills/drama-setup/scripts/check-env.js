@@ -18,6 +18,9 @@ const PACKAGE_JSON = path.join(WORKSPACE_DIR, "package.json");
 const NODE_MODULES = path.join(WORKSPACE_DIR, "node_modules");
 const DB_FILE = path.join(WORKSPACE_DIR, "outputs", "drama_agent.db");
 const CLAW_DIR = path.join(HOME, ".claw");
+const USERNAME = os.userInfo().username;
+const NODE_BIN = process.execPath; // 当前运行 node 的路径
+const SERVICE_NAME = "ai-drama-company.service";
 const TUNNEL_CONFIG = path.join(CLAW_DIR, "config", "tunnel.json");
 const CLOUDFLARED_BIN = path.join(CLAW_DIR, "bin", "cloudflared");
 
@@ -139,15 +142,59 @@ let serviceAutoStarted = false;
 
 if (!serviceOk && missingKeys.length === 0 && dbReady && npmInstallOk) {
   const serverScript = path.join(SKILL_DIR, "scripts", "server.js");
-  const logDir = path.join(HOME, ".claw");
-  fs.mkdirSync(logDir, { recursive: true });
-  const logFile = path.join(logDir, "ai-drama.log");
-  const out = fs.openSync(logFile, "a");
-  spawn("node", [serverScript], { cwd: WORKSPACE_DIR, detached: true, stdio: ["ignore", out, out] }).unref();
+  const logFile = path.join(CLAW_DIR, "ai-drama.log");
+  fs.mkdirSync(CLAW_DIR, { recursive: true });
+
+  // 优先用 systemd（持久化，防 OOM kill）
+  let usedSystemd = false;
+  const systemdPath = `/etc/systemd/system/${SERVICE_NAME}`;
+  const serviceContent = `[Unit]
+Description=AI Drama Company Agent (Node.js)
+After=network.target
+
+[Service]
+Type=simple
+User=${USERNAME}
+WorkingDirectory=${WORKSPACE_DIR}
+EnvironmentFile=${ENV_FILE}
+ExecStart=${NODE_BIN} skills/giggle-openclaw-drama-agent/scripts/server.js
+Restart=always
+RestartSec=5
+StandardOutput=append:${logFile}
+StandardError=append:${logFile}
+OOMScoreAdjust=-1000
+MemoryMax=infinity
+LimitNOFILE=65536
+LimitNPROC=infinity
+TimeoutStopSec=300
+TimeoutStartSec=60
+StartLimitIntervalSec=10
+StartLimitBurst=5
+
+[Install]
+WantedBy=multi-user.target
+`;
+
+  try {
+    // 写入 service 文件（需要 sudo，失败则降级）
+    const tmpService = path.join(CLAW_DIR, SERVICE_NAME);
+    fs.writeFileSync(tmpService, serviceContent);
+    execSync(`sudo cp "${tmpService}" "${systemdPath}" && sudo systemctl daemon-reload && sudo systemctl enable --now ${SERVICE_NAME}`, {
+      timeout: 15000, stdio: "pipe",
+    });
+    usedSystemd = true;
+    log("✅ 服务已注册到 systemd 并启动（开机自启）");
+  } catch {
+    // sudo 不可用，降级为 spawn 后台进程
+    const out = fs.openSync(logFile, "a");
+    spawn(NODE_BIN, [serverScript], { cwd: WORKSPACE_DIR, detached: true, stdio: ["ignore", out, out] }).unref();
+    log("✅ 服务已后台启动（建议手动安装 systemd service 以保持持久运行）");
+  }
+
   await new Promise(r => setTimeout(r, 3000));
   serviceOk = checkService();
   serviceAutoStarted = true;
-  log(serviceOk ? "✅ 服务已自动启动" : "⏳ 服务启动中（等待几秒后重试）");
+  log(serviceOk ? (usedSystemd ? "✅ 服务已通过 systemd 启动" : "✅ 服务已后台启动") : "⏳ 服务启动中（等待几秒后重试）");
 }
 
 // ── Step 6: 外网穿透 ─────────────────────────────────────────
@@ -224,19 +271,49 @@ async function registerDevice() {
   return null;
 }
 
-// 启动 cloudflared tunnel
+// 启动 cloudflared tunnel（优先 systemd，降级 spawn）
 function startTunnel(token, cfPath) {
+  const cfServiceName = "cloudflared-drama.service";
+  const cfLogFile = path.join(CLAW_DIR, "cloudflared.log");
+  const cfServiceContent = `[Unit]
+Description=Cloudflared Tunnel for AI Drama Company
+After=network.target
+
+[Service]
+Type=simple
+User=${USERNAME}
+ExecStart=${cfPath} tunnel --no-autoupdate run --token ${token}
+Restart=always
+RestartSec=5
+StandardOutput=append:${cfLogFile}
+StandardError=append:${cfLogFile}
+
+[Install]
+WantedBy=multi-user.target
+`;
+
   try {
-    const logFile = path.join(CLAW_DIR, "cloudflared.log");
-    fs.mkdirSync(CLAW_DIR, { recursive: true });
-    const out = fs.openSync(logFile, "a");
-    spawn(cfPath, ["tunnel", "--no-autoupdate", "run", "--token", token], {
-      detached: true, stdio: ["ignore", out, out],
-    }).unref();
+    const tmpCfService = path.join(CLAW_DIR, cfServiceName);
+    fs.writeFileSync(tmpCfService, cfServiceContent);
+    execSync(`sudo cp "${tmpCfService}" "/etc/systemd/system/${cfServiceName}" && sudo systemctl daemon-reload && sudo systemctl enable --now ${cfServiceName}`, {
+      timeout: 15000, stdio: "pipe",
+    });
+    log("✅ cloudflared 已注册到 systemd 并启动（开机自启）");
     return true;
-  } catch (e) {
-    log(`❌ cloudflared 启动失败: ${e.message}`);
-    return false;
+  } catch {
+    // sudo 不可用，降级 spawn
+    try {
+      fs.mkdirSync(CLAW_DIR, { recursive: true });
+      const out = fs.openSync(cfLogFile, "a");
+      spawn(cfPath, ["tunnel", "--no-autoupdate", "run", "--token", token], {
+        detached: true, stdio: ["ignore", out, out],
+      }).unref();
+      log("✅ cloudflared 已后台启动（建议手动安装 systemd service 以保持持久运行）");
+      return true;
+    } catch (e) {
+      log(`❌ cloudflared 启动失败: ${e.message}`);
+      return false;
+    }
   }
 }
 
