@@ -808,8 +808,8 @@
         <div class="agent-task" style="font-size:14px;">⏳ AI 正在生成剧本${prog ? ' (' + prog + ')' : ''}...</div>
         <div style="margin-top:8px;font-size:11px;opacity:.5;">通常需要 1-2 分钟</div>
       </div>`;
-      // 不 return,继续执行下面的控制台轮询逻辑
-    }
+      // 剩余逻辑（控制台轮询）继续执行，不 return
+    } else {
 
     // 判断全部视频是否已生成完毕（含失败集，但所有完成集都有 export_url）
     const allVideosDone = eps.length > 0 && eps.every(ep =>
@@ -857,6 +857,7 @@
         </div>
       `;
     }).join('') || '<div class="agent-card idle" style="grid-column:1/-1;"><div class="agent-task">该项目暂无分集数据</div></div>';
+    } // end of else (not generating with 0 eps)
 
     // ── X2C 发布状态展示 ──
     const proj = data.project || {};
@@ -962,7 +963,7 @@
     renderStoryProjects();
     if (selectedStoryProjectUuid) await renderStoryEpisodes(selectedStoryProjectUuid);
     // 如果有剧本生成中的项目,启动自动轮询
-    if (typeof pollScriptGen === 'function' && storyProjects.some(p => typeof p.status === 'string' && p.status.startsWith('generating:'))) pollScriptGen();
+    if (typeof pollScriptGen === 'function' && storyProjects.some(p => typeof p.status === 'string' && (p.status.startsWith('generating') || p.status === 'running'))) pollScriptGen();
   }
 
   async function createStoryProjectFromInput() {
@@ -1227,13 +1228,16 @@
     function pollScriptGen() {
       if (_scriptGenTimer) return;
       _scriptGenTimer = setInterval(async () => {
-        const hasGen = storyProjects.some(p => typeof p.status === 'string' && p.status.startsWith('generating:'));
-        if (!hasGen) { clearInterval(_scriptGenTimer); _scriptGenTimer = null; return; }
+        const hasActive = storyProjects.some(p => typeof p.status === 'string' &&
+          (p.status.startsWith('generating') || p.status === 'running'));
+        if (!hasActive) { clearInterval(_scriptGenTimer); _scriptGenTimer = null; return; }
         await refreshStoryWorkspace();
       }, 3000);
     }
     setTimeout(() => {
-      if (storyProjects.some(p => typeof p.status === 'string' && p.status.startsWith('generating:'))) pollScriptGen();
+      const hasActive = storyProjects.some(p => typeof p.status === 'string' &&
+        (p.status.startsWith('generating') || p.status === 'running'));
+      if (hasActive) pollScriptGen();
     }, 1000);
   }
 
