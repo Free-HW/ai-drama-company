@@ -944,8 +944,8 @@ async function runAutoRun(projectUuid) {
       pollTimeoutMs: Number(process.env.POLL_TIMEOUT_MS || 3600000),
     });
 
-    const styleId = project.style_id || req.body?.styleId || 146;
-    const videoDuration = project.video_duration || req.body?.videoDuration || 60;
+    const styleId = project.style_id || 146;
+    const videoDuration = project.video_duration || 60;
 
     // ── Phase 1:串行跑完所有集的分镜图 ──
     pipelineEmit('system', 'SYSTEM', `[Pipeline] Phase 1 开始:生成分镜图(${episodes.length} 集)`, 'system');
