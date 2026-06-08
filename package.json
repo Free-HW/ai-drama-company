@@ -1,6 +1,6 @@
 {
   "name": "ai-drama-company",
-  "version": "1.0.0",
+  "version": "2026.06.08-19",
   "main": "skills/giggle-openclaw-drama-agent/scripts/server.js",
   "scripts": {
     "db:init": "node skills/giggle-openclaw-drama-agent/scripts/init_db.js",
