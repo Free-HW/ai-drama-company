@@ -43,10 +43,17 @@ app.use(express.static(path.join(__dirname, '..', 'assets')));
 
 
 const X2C_API_ENDPOINT = 'https://eumfmgwxwjyagsvqloac.supabase.co/functions/v1/open-api';
+const DOT_ENV_PATH = path.join(__dirname, '..', '..', '..', '.env');
+
+// 动态重读 .env，解决「写入 .env 后不重启服务就生效」的问题
+function reloadEnv() {
+  require('dotenv').config({ path: DOT_ENV_PATH, override: true });
+}
 
 async function x2cCall(payload) {
+  reloadEnv();
   const apiKey = process.env.X2C_API_KEY;
-  if (!apiKey) throw new Error('Missing env: X2C_API_KEY');
+  if (!apiKey) throw new Error('X2C_API_KEY 未配置，请在 .env 中添加 X2C_API_KEY 并重启服务');
 
   const resp = await fetch(X2C_API_ENDPOINT, {
     method: 'POST',

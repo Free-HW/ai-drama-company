@@ -7,8 +7,15 @@ const X2C_API = 'https://eumfmgwxwjyagsvqloac.supabase.co/functions/v1/open-api'
 const path = require('path');
 const fs = require('fs');
 
+const DOT_ENV_PATH = path.join(__dirname, '..', '..', '..', '.env');
+
+function reloadEnv() {
+  try { require('dotenv').config({ path: DOT_ENV_PATH, override: true }); } catch (_) {}
+}
+
 function getApiKey() {
-  // 优先从环境变量读取
+  // 每次调用时重读 .env，解决写入后不重启也能生效
+  reloadEnv();
   if (process.env.X2C_API_KEY) return process.env.X2C_API_KEY;
   // 其次从 credentials/default.json
   const credPath = path.join(__dirname, '../../x2c-publish/credentials/default.json');
@@ -16,7 +23,7 @@ function getApiKey() {
     const cred = JSON.parse(fs.readFileSync(credPath, 'utf8'));
     if (cred.x2cApiKey) return cred.x2cApiKey;
   }
-  throw new Error('X2C API Key not configured');
+  throw new Error('X2C_API_KEY 未配置，请在 .env 中添加 X2C_API_KEY');
 }
 
 async function x2cApi(action, params = {}) {
