@@ -129,6 +129,46 @@ if (!dbReady && missingKeys.length === 0 && npmInstallOk) {
 }
 
 // ── Step 5: 检查/启动服务 ────────────────────────────────────
+
+// 杀掉所有不属于当前 workspace 的旧 server.js 进程
+// 场景：OpenClaw 重装 Agent 时会把旧 workspace 移入 .Trash，旧进程仍绑定旧路径
+function killStaleServers() {
+  try {
+    const result = execSync("pgrep -f 'server.js' 2>/dev/null || true", { encoding: "utf8" }).trim();
+    if (!result) return;
+    const pids = result.split("\n").filter(Boolean);
+    for (const pid of pids) {
+      try {
+        // 读取该进程的 cwd
+        const cwd = fs.readlinkSync(`/proc/${pid}/cwd`);
+        // 如果 cwd 不在当前 workspace（比如在 .Trash 里），就杀掉
+        if (!cwd.startsWith(WORKSPACE_DIR)) {
+          execSync(`kill ${pid} 2>/dev/null || true`, { stdio: "pipe" });
+          log(`✅ 已清理旧进程 PID ${pid}（旧路径: ${cwd}）`);
+        }
+      } catch { /* 进程已消失或无权限，跳过 */ }
+    }
+  } catch { }
+}
+
+killStaleServers();
+
+// 检查服务是否绑定到当前 workspace（排除旧进程假阳性）
+function isServiceBoundToCurrentWorkspace() {
+  try {
+    const result = execSync("pgrep -f 'server.js' 2>/dev/null || true", { encoding: "utf8" }).trim();
+    if (!result) return false;
+    const pids = result.split("\n").filter(Boolean);
+    for (const pid of pids) {
+      try {
+        const cwd = fs.readlinkSync(`/proc/${pid}/cwd`);
+        if (cwd.startsWith(WORKSPACE_DIR)) return true;
+      } catch { }
+    }
+    return false;
+  } catch { return false; }
+}
+
 let serviceOk = false;
 const checkService = () => {
   try {
@@ -137,9 +177,10 @@ const checkService = () => {
   } catch { return false; }
 };
 
-serviceOk = checkService();
-let serviceAutoStarted = false;
+serviceOk = checkService() && isServiceBoundToCurrentWorkspace();
+if (!serviceOk) log("⚠️ 服务未运行或绑定到旧 workspace，将重新启动");
 
+let serviceAutoStarted = false;
 if (!serviceOk && missingKeys.length === 0 && dbReady && npmInstallOk) {
   const serverScript = path.join(SKILL_DIR, "scripts", "server.js");
   const logFile = path.join(CLAW_DIR, "ai-drama.log");
