@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+{% block title %}{{ module.name }} — Claw Dashboard{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">{{ module.icon or '📊' }} {{ module.name }}</h1>
+    <p class="page-subtitle">Agent: {{ module.agent_id }}</p>
+</div>
+
+{% if widgets %}
+<div class="grid grid-4">
+    {% for w in widgets %}
+    <div class="card {% if w.widget_type in ['table', 'stat_row'] %}{% endif %}"
+         {% if w.widget_type in ['table'] %}style="grid-column: 1 / -1;"{% endif %}
+         {% if w.widget_type in ['line_chart', 'bar_chart', 'pie_chart'] %}style="grid-column: span 2;"{% endif %}>
+        <div class="card-title">{{ w.title }}</div>
+
+        {% if w.widget_type == 'kpi_card' %}
+            <div class="kpi-value">
+                {{ w.config.get('prefix', '') }}{{ w.data[0] if w.data else '—' }}{{ w.config.get('suffix', '') }}
+            </div>
+            {% if w.config.get('subtitle') or w.config.get('trend') %}
+            <div class="kpi-sub">
+                {% if w.config.get('trend') %}
+                <span class="kpi-trend {% if w.config.get('trend') == 'up' %}kpi-up{% elif w.config.get('trend') == 'down' %}kpi-down{% else %}kpi-neutral{% endif %}">
+                    {% if w.config.get('trend') == 'up' %}↑{% elif w.config.get('trend') == 'down' %}↓{% else %}—{% endif %}
+                    {{ w.config.get('subtitle', '') }}
+                </span>
+                {% else %}
+                {{ w.config.get('subtitle', '') }}
+                {% endif %}
+            </div>
+            {% endif %}
+
+        {% elif w.widget_type in ['line_chart', 'bar_chart'] %}
+            <div class="chart-container">
+                <canvas id="chart-{{ w.id }}"></canvas>
+            </div>
+
+        {% elif w.widget_type == 'pie_chart' %}
+            <div class="chart-container">
+                <canvas id="chart-{{ w.id }}"></canvas>
+            </div>
+
+        {% elif w.widget_type == 'table' %}
+            {% if w.data %}
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            {% for col in w.data[0].keys() %}
+                            <th>{{ col }}</th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in w.data %}
+                        <tr>
+                            {% for val in row.values() %}
+                            <td>{{ val }}</td>
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p style="color:var(--text2);margin-top:12px;">暂无数据</p>
+            {% endif %}
+
+        {% elif w.widget_type == 'text' %}
+            <div style="font-size:14px;color:var(--text2);line-height:1.7;margin-top:12px;">
+                {{ w.data[0] if w.data else '' }}
+            </div>
+
+        {% elif w.widget_type == 'stat_row' %}
+            <div class="stat-row">
+                {% for item in w.data %}
+                <div class="stat-item">
+                    <div class="stat-label">{{ item.label }}</div>
+                    <div class="stat-value">{{ item.value }}</div>
+                </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+    <div class="icon">{{ module.icon or '📊' }}</div>
+    <h2>暂无数据</h2>
+    <p style="margin-top:8px;">此模块已注册但尚未添加任何组件<br>Agent 将在这里添加图表、表格和卡片</p>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    {% for w in widgets %}
+    {% if w.widget_type in ['line_chart', 'bar_chart'] %}
+    (function() {
+        const ctx = document.getElementById('chart-{{ w.id }}');
+        if (!ctx) return;
+        const config = {{ w.config | tojson }};
+        const data = {{ w.data | tojson }};
+        new Chart(ctx, {
+            type: '{{ "line" if w.widget_type == "line_chart" else "bar" }}',
+            data: {
+                labels: config.labels || data.map((_, i) => i),
+                datasets: [{
+                    label: config.dataset_label || '{{ w.title }}',
+                    data: Array.isArray(data[0]) ? data[0] : data,
+                    borderColor: config.color || '#6366f1',
+                    backgroundColor: config.bg_color || 'rgba(99,102,241,0.1)',
+                    borderWidth: 2,
+                    fill: {{ 'true' if w.widget_type == 'line_chart' else 'false' }},
+                    tension: 0.4,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { 
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: 'rgba(20, 24, 36, 0.95)',
+                        titleColor: '#e8eaed',
+                        bodyColor: '#9ca3af',
+                        borderColor: '#1f2937',
+                        borderWidth: 1,
+                        padding: 12,
+                        displayColors: false,
+                    }
+                },
+                scales: {
+                    x: { 
+                        grid: { color: '#1f2937', drawBorder: false }, 
+                        ticks: { color: '#6b7280', font: { size: 11 } } 
+                    },
+                    y: { 
+                        grid: { color: '#1f2937', drawBorder: false }, 
+                        ticks: { color: '#6b7280', font: { size: 11 } } 
+                    }
+                }
+            }
+        });
+    })();
+    {% elif w.widget_type == 'pie_chart' %}
+    (function() {
+        const ctx = document.getElementById('chart-{{ w.id }}');
+        if (!ctx) return;
+        const config = {{ w.config | tojson }};
+        const data = {{ w.data | tojson }};
+        const colors = config.colors || ['#6366f1','#10b981','#f59e0b','#ef4444','#3b82f6','#f97316','#8b5cf6','#ec4899'];
+        new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: config.labels || data.map((_, i) => `Item ${i+1}`),
+                datasets: [{
+                    data: data,
+                    backgroundColor: colors.slice(0, data.length),
+                    borderWidth: 2,
+                    borderColor: '#141824',
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { 
+                    legend: { 
+                        position: 'right', 
+                        labels: { 
+                            color: '#e8eaed',
+                            font: { size: 12 },
+                            padding: 12,
+                            usePointStyle: true,
+                        } 
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(20, 24, 36, 0.95)',
+                        titleColor: '#e8eaed',
+                        bodyColor: '#9ca3af',
+                        borderColor: '#1f2937',
+                        borderWidth: 1,
+                        padding: 12,
+                    }
+                }
+            }
+        });
+    })();
+    {% endif %}
+    {% endfor %}
+});
+</script>
+{% endblock %}

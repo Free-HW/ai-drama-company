@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}总览 — Claw Dashboard{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">总览</h1>
+    <p class="page-subtitle">所有 Agent 模块概览</p>
+</div>
+
+{% if modules %}
+<div class="grid grid-3">
+    {% for m in modules %}
+    <a href="/m/{{ m.id }}" style="text-decoration:none;color:inherit;">
+        <div class="card">
+            <div style="font-size:48px;margin-bottom:16px;text-align:center;">{{ m.icon or '📊' }}</div>
+            <div style="font-size:18px;font-weight:600;margin-bottom:8px;text-align:center;">{{ m.name }}</div>
+            <div style="font-size:13px;color:var(--text2);text-align:center;">
+                <span class="badge badge-info">{{ m.agent_id }}</span>
+            </div>
+        </div>
+    </a>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+    <div class="icon">📊</div>
+    <h2>暂无模块</h2>
+    <p style="margin-top:8px;">你的 Agent 将在这里注册 Dashboard 模块<br>开始与支持 Dashboard 的 Agent 对话即可</p>
+</div>
+{% endif %}
+{% endblock %}
