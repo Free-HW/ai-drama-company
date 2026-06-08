@@ -145,16 +145,15 @@ if (!serviceOk && missingKeys.length === 0 && dbReady && npmInstallOk) {
   const logFile = path.join(CLAW_DIR, "ai-drama.log");
   fs.mkdirSync(CLAW_DIR, { recursive: true });
 
-  // 优先用 systemd（持久化，防 OOM kill）
+  // 用户级 systemd（不需要 sudo，所有用户都可用）
   let usedSystemd = false;
-  const systemdPath = `/etc/systemd/system/${SERVICE_NAME}`;
+  const userSystemdDir = path.join(HOME, ".config", "systemd", "user");
   const serviceContent = `[Unit]
 Description=AI Drama Company Agent (Node.js)
 After=network.target
 
 [Service]
 Type=simple
-User=${USERNAME}
 WorkingDirectory=${WORKSPACE_DIR}
 EnvironmentFile=${ENV_FILE}
 ExecStart=${NODE_BIN} skills/giggle-openclaw-drama-agent/scripts/server.js
@@ -163,7 +162,6 @@ RestartSec=5
 StandardOutput=append:${logFile}
 StandardError=append:${logFile}
 OOMScoreAdjust=-1000
-MemoryMax=infinity
 LimitNOFILE=65536
 LimitNPROC=infinity
 TimeoutStopSec=300
@@ -172,23 +170,38 @@ StartLimitIntervalSec=10
 StartLimitBurst=5
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target
 `;
 
   try {
-    // 写入 service 文件（需要 sudo，失败则降级）
-    const tmpService = path.join(CLAW_DIR, SERVICE_NAME);
-    fs.writeFileSync(tmpService, serviceContent);
-    execSync(`sudo cp "${tmpService}" "${systemdPath}" && sudo systemctl daemon-reload && sudo systemctl enable --now ${SERVICE_NAME}`, {
+    fs.mkdirSync(userSystemdDir, { recursive: true });
+    fs.writeFileSync(path.join(userSystemdDir, SERVICE_NAME), serviceContent);
+    execSync(`systemctl --user daemon-reload && systemctl --user enable --now ${SERVICE_NAME}`, {
       timeout: 15000, stdio: "pipe",
     });
+    // 确保 loginctl 开机自启
+    try { execSync("loginctl enable-linger", { stdio: "pipe" }); } catch { }
     usedSystemd = true;
-    log("✅ 服务已注册到 systemd 并启动（开机自启）");
-  } catch {
-    // sudo 不可用，降级为 spawn 后台进程
-    const out = fs.openSync(logFile, "a");
-    spawn(NODE_BIN, [serverScript], { cwd: WORKSPACE_DIR, detached: true, stdio: ["ignore", out, out] }).unref();
-    log("✅ 服务已后台启动（建议手动安装 systemd service 以保持持久运行）");
+    log("✅ 服务已注册到用户级 systemd 并启动（开机自启）");
+  } catch (e) {
+    // 用户级 systemd 不可用，降级 sudo 系统级
+    try {
+      const systemdPath = `/etc/systemd/system/${SERVICE_NAME}`;
+      const tmpService = path.join(CLAW_DIR, SERVICE_NAME);
+      const sysContent = serviceContent.replace("WantedBy=default.target", "WantedBy=multi-user.target")
+        .replace("\n[Service]", `\n[Service]\nUser=${USERNAME}`);
+      fs.writeFileSync(tmpService, sysContent);
+      execSync(`sudo cp "${tmpService}" "${systemdPath}" && sudo systemctl daemon-reload && sudo systemctl enable --now ${SERVICE_NAME}`, {
+        timeout: 15000, stdio: "pipe",
+      });
+      usedSystemd = true;
+      log("✅ 服务已注册到系统级 systemd 并启动");
+    } catch {
+      // 两种 systemd 均失败，最后降级 spawn
+      const out = fs.openSync(logFile, "a");
+      spawn(NODE_BIN, [serverScript], { cwd: WORKSPACE_DIR, detached: true, stdio: ["ignore", out, out] }).unref();
+      log("⚠️ 服务已后台启动（无 systemd 权限，重启后需重新初始化）");
+    }
   }
 
   await new Promise(r => setTimeout(r, 3000));
@@ -271,7 +284,7 @@ async function registerDevice() {
   return null;
 }
 
-// 启动 cloudflared tunnel（优先 systemd，降级 spawn）
+// 启动 cloudflared tunnel（优先用户级 systemd，降级 sudo，最后 spawn）
 function startTunnel(token, cfPath) {
   const cfServiceName = "cloudflared-drama.service";
   const cfLogFile = path.join(CLAW_DIR, "cloudflared.log");
@@ -281,7 +294,6 @@ After=network.target
 
 [Service]
 Type=simple
-User=${USERNAME}
 ExecStart=${cfPath} tunnel --no-autoupdate run --token ${token}
 Restart=always
 RestartSec=5
@@ -289,31 +301,49 @@ StandardOutput=append:${cfLogFile}
 StandardError=append:${cfLogFile}
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target
 `;
 
+  // 1️⃣ 用户级 systemd（不需要 sudo）
   try {
-    const tmpCfService = path.join(CLAW_DIR, cfServiceName);
-    fs.writeFileSync(tmpCfService, cfServiceContent);
-    execSync(`sudo cp "${tmpCfService}" "/etc/systemd/system/${cfServiceName}" && sudo systemctl daemon-reload && sudo systemctl enable --now ${cfServiceName}`, {
+    const userSystemdDir = path.join(HOME, ".config", "systemd", "user");
+    fs.mkdirSync(userSystemdDir, { recursive: true });
+    fs.writeFileSync(path.join(userSystemdDir, cfServiceName), cfServiceContent);
+    execSync(`systemctl --user daemon-reload && systemctl --user enable --now ${cfServiceName}`, {
       timeout: 15000, stdio: "pipe",
     });
-    log("✅ cloudflared 已注册到 systemd 并启动（开机自启）");
+    try { execSync("loginctl enable-linger", { stdio: "pipe" }); } catch { }
+    log("✅ cloudflared 已注册到用户级 systemd 并启动（开机自启）");
     return true;
-  } catch {
-    // sudo 不可用，降级 spawn
-    try {
-      fs.mkdirSync(CLAW_DIR, { recursive: true });
-      const out = fs.openSync(cfLogFile, "a");
-      spawn(cfPath, ["tunnel", "--no-autoupdate", "run", "--token", token], {
-        detached: true, stdio: ["ignore", out, out],
-      }).unref();
-      log("✅ cloudflared 已后台启动（建议手动安装 systemd service 以保持持久运行）");
-      return true;
-    } catch (e) {
-      log(`❌ cloudflared 启动失败: ${e.message}`);
-      return false;
-    }
+  } catch { }
+
+  // 2️⃣ 系统级 systemd（需要 sudo）
+  try {
+    const sysSvcPath = `/etc/systemd/system/${cfServiceName}`;
+    const tmpCfService = path.join(CLAW_DIR, cfServiceName);
+    const sysCfContent = cfServiceContent
+      .replace("WantedBy=default.target", "WantedBy=multi-user.target")
+      .replace("\n[Service]", `\n[Service]\nUser=${USERNAME}`);
+    fs.writeFileSync(tmpCfService, sysCfContent);
+    execSync(`sudo cp "${tmpCfService}" "${sysSvcPath}" && sudo systemctl daemon-reload && sudo systemctl enable --now ${cfServiceName}`, {
+      timeout: 15000, stdio: "pipe",
+    });
+    log("✅ cloudflared 已注册到系统级 systemd 并启动");
+    return true;
+  } catch { }
+
+  // 3️⃣ 降级 spawn
+  try {
+    fs.mkdirSync(CLAW_DIR, { recursive: true });
+    const out = fs.openSync(cfLogFile, "a");
+    spawn(cfPath, ["tunnel", "--no-autoupdate", "run", "--token", token], {
+      detached: true, stdio: ["ignore", out, out],
+    }).unref();
+    log("⚠️ cloudflared 已后台启动（无 systemd 权限，重启后需重新初始化）");
+    return true;
+  } catch (e) {
+    log(`❌ cloudflared 启动失败: ${e.message}`);
+    return false;
   }
 }
 
