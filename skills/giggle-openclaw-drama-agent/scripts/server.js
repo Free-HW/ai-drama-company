@@ -64,6 +64,7 @@ async function x2cCall(payload) {
 }
 
 const db = openDb();
+const GIGGLE_BASE_URL = process.env.GIGGLE_BASE_URL || 'https://giggle.pro';
 initSchema(db).catch((e) => {
   console.error('DB init error:', e.message);
   process.exit(1);
@@ -504,7 +505,6 @@ app.post('/api/agent/projects/:projectUuid/episodes/:episodeNo/run', async (req,
   const { projectUuid, episodeNo } = req.params;
   try {
     const missing = [];
-    if (!process.env.GIGGLE_BASE_URL) missing.push('GIGGLE_BASE_URL');
     if (!process.env.GIGGLE_API_KEY) missing.push('GIGGLE_API_KEY');
     if (missing.length) return res.status(400).json({ ok: false, error: `Missing env: ${missing.join(', ')}` });
 
@@ -541,7 +541,7 @@ app.post('/api/agent/projects/:projectUuid/episodes/:episodeNo/run', async (req,
     (async () => {
       try {
         const giggle = new GiggleClient({
-          baseUrl: process.env.GIGGLE_BASE_URL,
+          baseUrl: GIGGLE_BASE_URL,
           apiKey: process.env.GIGGLE_API_KEY,
           authMode: process.env.GIGGLE_AUTH_MODE || 'x-auth',
         });
@@ -618,7 +618,6 @@ app.post('/api/agent/run', async (req, res) => {
   }
 
   const missing = [];
-  if (!process.env.GIGGLE_BASE_URL) missing.push('GIGGLE_BASE_URL');
   if (!process.env.GIGGLE_API_KEY) missing.push('GIGGLE_API_KEY');
   if (missing.length) {
     return res.status(400).json({ ok: false, error: `Missing env: ${missing.join(', ')}` });
@@ -636,7 +635,7 @@ app.post('/api/agent/run', async (req, res) => {
   (async () => {
     try {
       const giggle = new GiggleClient({
-        baseUrl: process.env.GIGGLE_BASE_URL,
+        baseUrl: GIGGLE_BASE_URL,
         apiKey: process.env.GIGGLE_API_KEY,
         authMode: process.env.GIGGLE_AUTH_MODE || 'x-auth',
       });
@@ -891,7 +890,7 @@ app.get('/api/agent/projects/:projectUuid/shots', async (req, res) => {
     const ep = await getProjectEpisodeByNo(db, { projectUuid: req.params.projectUuid, episodeNo: Number(req.query.episode_no || 1) });
     if (!ep?.giggle_project_id) return res.json({ ok: true, data: [] });
     const giggle = new GiggleClient({
-      baseUrl: process.env.GIGGLE_BASE_URL,
+      baseUrl: GIGGLE_BASE_URL,
       apiKey: process.env.GIGGLE_API_KEY,
       authMode: process.env.GIGGLE_AUTH_MODE || 'x-auth',
     });
@@ -908,11 +907,6 @@ async function runAutoRun(projectUuid) {
     if (!project) throw new Error('project not found: ' + projectUuid);
 
     // 开始前检查必要环境变量，避免初始化平台后才报错导致状态脱节
-    if (!process.env.GIGGLE_BASE_URL) {
-      await setStoryProjectStatus(db, { projectUuid, status: 'failed' });
-      console.error(`[runAutoRun] GIGGLE_BASE_URL 未配置，無法启动流水线 (project: ${projectUuid})`);
-      throw new Error('GIGGLE_BASE_URL is not configured. Please set it in .env and restart.');
-    }
     if (!process.env.GIGGLE_API_KEY) {
       await setStoryProjectStatus(db, { projectUuid, status: 'failed' });
       console.error(`[runAutoRun] GIGGLE_API_KEY 未配置，無法启动流水线 (project: ${projectUuid})`);
@@ -940,7 +934,7 @@ async function runAutoRun(projectUuid) {
     await updateProjectEpisode(db, { projectUuid, status: 'running' });
 
     const giggle = new GiggleClient({
-      baseUrl: process.env.GIGGLE_BASE_URL,
+      baseUrl: GIGGLE_BASE_URL,
       apiKey: process.env.GIGGLE_API_KEY,
       authMode: process.env.GIGGLE_AUTH_MODE || 'x-auth',
     });
@@ -1273,7 +1267,7 @@ app.post('/api/agent/projects/:projectUuid/episodes/:episodeNo/retry', async (re
         emit('system', 'SYSTEM', `[Retry] EP${epNo} 开始重试`, 'system');
 
         const giggle = new GiggleClient({
-          baseUrl: process.env.GIGGLE_BASE_URL,
+          baseUrl: GIGGLE_BASE_URL,
           apiKey: process.env.GIGGLE_API_KEY,
           authMode: process.env.GIGGLE_AUTH_MODE || 'x-auth',
         });

@@ -20,7 +20,6 @@ cat ~/.openclaw/device-info.json
 
 ### Step 3 — 检查 API Keys
 检查 `~/.openclaw/workspace-ai-drama-company/.env` 中以下变量是否已填写（非占位符）：
-- `GIGGLE_BASE_URL`（Giggle API 地址，例如 https://api.giggle.pro）
 - `GIGGLE_API_KEY`（Giggle 视频制作，来自 giggle.pro 开发者后台）
 - `X2C_API_KEY`（X2C 平台发布，来自 X2C 账号设置）
 - `OPENCLAW_GATEWAY_PASSWORD`（OpenClaw Gateway 密码）
@@ -62,7 +61,6 @@ AI Drama Company 是一个 AI 短剧一站式生产 Agent，核心能力：
 
 | 变量 | 来源 | 必填 |
 |------|------|------|
-| `GIGGLE_BASE_URL` | Giggle 文档（例: https://api.giggle.pro） | ✅ |
 | `GIGGLE_API_KEY` | [giggle.pro](https://giggle.pro) 开发者后台 | ✅ |
 | `X2C_API_KEY` | https://x2creel.ai/ → 个人中心 | ✅ |
 | `OPENCLAW_GATEWAY_PASSWORD` | OpenClaw 设置页 | ✅ |
