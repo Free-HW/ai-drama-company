@@ -60,6 +60,7 @@ if (!npmInstallOk) {
 
 // ── Step 3: 读取/配置 .env ──────────────────────────────────
 const USER_KEYS = [
+  { key: "GIGGLE_BASE_URL", label: "Giggle API Base URL（例如 https://api.giggle.pro，从 Giggle 文档获取）" },
   { key: "GIGGLE_API_KEY", label: "Giggle API Key（从 giggle.pro 开发者后台获取）" },
   { key: "X2C_API_KEY", label: "X2C API Key（前往 https://x2creel.ai/ → 个人中心 获取）" },
 ];

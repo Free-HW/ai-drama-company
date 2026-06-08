@@ -907,6 +907,18 @@ async function runAutoRun(projectUuid) {
     const project = await getStoryProject(db, projectUuid);
     if (!project) throw new Error('project not found: ' + projectUuid);
 
+    // 开始前检查必要环境变量，避免初始化平台后才报错导致状态脱节
+    if (!process.env.GIGGLE_BASE_URL) {
+      await setStoryProjectStatus(db, { projectUuid, status: 'failed' });
+      console.error(`[runAutoRun] GIGGLE_BASE_URL 未配置，無法启动流水线 (project: ${projectUuid})`);
+      throw new Error('GIGGLE_BASE_URL is not configured. Please set it in .env and restart.');
+    }
+    if (!process.env.GIGGLE_API_KEY) {
+      await setStoryProjectStatus(db, { projectUuid, status: 'failed' });
+      console.error(`[runAutoRun] GIGGLE_API_KEY 未配置，無法启动流水线 (project: ${projectUuid})`);
+      throw new Error('GIGGLE_API_KEY is not configured. Please set it in .env and restart.');
+    }
+
     const episodes = await listProjectEpisodesByUuid(db, projectUuid);
     if (!episodes.length) throw new Error('no episodes found for ' + projectUuid);
 
