@@ -73,36 +73,84 @@ if (!npmInstallOk) {
 }
 
 // ── Step 4: 检查 .env ───────────────────────────────────────
-const REQUIRED_KEYS = [
+// 用户必须手动提供的 Keys
+const USER_KEYS = [
   { key: "GIGGLE_API_KEY", label: "Giggle API Key（从 giggle.pro 开发者后台获取）" },
   { key: "X2C_API_KEY", label: "X2C API Key（从 X2C 平台账号设置获取）" },
-  { key: "OPENCLAW_GATEWAY_PASSWORD", label: "OpenClaw Gateway 密码（从 OpenClaw 设置页获取）" },
-  { key: "STORYCLAW_API_KEY", label: "StoryClaw API Key（从 StoryClaw 账号设置获取）" },
 ];
+
+// 从系统自动读取的 Keys
+function readSystemKeys() {
+  const systemKeys = {};
+  const ocConfigPath = path.join(HOME, ".openclaw", "openclaw.json");
+  if (fs.existsSync(ocConfigPath)) {
+    try {
+      const cfg = JSON.parse(fs.readFileSync(ocConfigPath, "utf-8"));
+      const gwPassword = cfg?.gateway?.auth?.password;
+      if (gwPassword) systemKeys["OPENCLAW_GATEWAY_PASSWORD"] = gwPassword;
+      const storyclawKey = cfg?.models?.providers?.storyclaw?.apiKey;
+      if (storyclawKey) systemKeys["STORYCLAW_API_KEY"] = storyclawKey;
+    } catch { /* ignore */ }
+  }
+  return systemKeys;
+}
 
 let envMap = {};
 let missingKeys = [];
 
+// 创建或读取 .env
 if (!fs.existsSync(ENV_FILE)) {
-  // 从 .env.example 创建 .env
   if (fs.existsSync(ENV_EXAMPLE)) {
     fs.copyFileSync(ENV_EXAMPLE, ENV_FILE);
     log("✅ .env 已从模板创建");
   }
-  missingKeys = REQUIRED_KEYS.map(k => k.key);
-} else {
+} 
+
+// 读取当前 .env
+if (fs.existsSync(ENV_FILE)) {
   const content = fs.readFileSync(ENV_FILE, "utf-8");
   for (const line of content.split("\n")) {
     const m = line.match(/^([A-Z0-9_]+)\s*=\s*(.*)$/);
     if (m) envMap[m[1]] = m[2].replace(/^["']|["']$/g, "").trim();
   }
-  for (const { key } of REQUIRED_KEYS) {
-    const val = envMap[key] || "";
-    if (!val || val.startsWith("your_") || val.includes("_your_") || val.length < 8) {
-      missingKeys.push(key);
+}
+
+// 自动写入系统 Keys（GATEWAY_PASSWORD + STORYCLAW_API_KEY）
+const systemKeys = readSystemKeys();
+let systemKeysWritten = false;
+for (const [key, value] of Object.entries(systemKeys)) {
+  const current = envMap[key] || "";
+  if (!current || current.startsWith("your_") || current.includes("_your_") || current.length < 8) {
+    // 写入 .env
+    if (fs.existsSync(ENV_FILE)) {
+      let content = fs.readFileSync(ENV_FILE, "utf-8");
+      const regex = new RegExp(`^${key}=.*$`, "m");
+      if (regex.test(content)) {
+        content = content.replace(regex, `${key}=${value}`);
+      } else {
+        content += `\n${key}=${value}`;
+      }
+      fs.writeFileSync(ENV_FILE, content, "utf-8");
     }
+    envMap[key] = value;
+    systemKeysWritten = true;
+    log(`✅ ${key} 已从系统自动读取并写入`);
   }
 }
+if (systemKeysWritten) {
+  log("✅ 系统 Keys（Gateway密码、StoryClaw Key）已自动配置");
+}
+
+// 只检查用户必须提供的 Keys
+for (const { key } of USER_KEYS) {
+  const val = envMap[key] || "";
+  if (!val || val.startsWith("your_") || val.includes("_your_") || val.length < 8) {
+    missingKeys.push(key);
+  }
+}
+
+// 保持 REQUIRED_KEYS 兼容性
+const REQUIRED_KEYS = USER_KEYS;
 
 // ── Step 5: 初始化数据库 ─────────────────────────────────────
 let dbReady = fs.existsSync(DB_FILE);
@@ -204,7 +252,7 @@ process.stdout.write(JSON.stringify({
   npmInstallOk,
   dbReady,
   missingKeys,
-  missingKeysDetail: REQUIRED_KEYS.filter(k => missingKeys.includes(k.key)),
+  missingKeysDetail: USER_KEYS.filter(k => missingKeys.includes(k.key)),
   externalUrl,
   localUrl: "http://localhost:3000",
   workspaceDir: WORKSPACE_DIR,

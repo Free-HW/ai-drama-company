@@ -32,17 +32,19 @@ node skills/drama-setup/scripts/check-env.js
 
 ---
 
-### 情况2：`missingKeys` 不为空（需要配置 API Keys）
+### 情况2：`missingKeys` 不为空（需要用户提供 API Keys）
 
-逐项询问用户，格式：
+说明系统 Keys 已自动获取，只需用户提供以下2个：
 ```
-⚙️ 需要配置以下 API Keys 才能开始：
+⚙️ 还需要你提供以下 API Keys：
 
-1. {missingKeysDetail[0].label}
-   请提供：
+1. GIGGLE_API_KEY — 从 giggle.pro 开发者后台获取
+2. X2C_API_KEY — 从 X2C 平台账号设置获取
+
+请逐一提供，我来帮你写入配置。
 ```
 
-用户回复后写入 `~/.openclaw/workspace-ai-drama-company/.env`，全部填完后再次运行 check-env.js。
+用户提供后写入 `~/.openclaw/workspace-ai-drama-company/.env`，写完后再次运行 check-env.js。
 
 ---
 
