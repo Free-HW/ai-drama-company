@@ -1401,7 +1401,7 @@
   <aside class="pane-right">
     
     <!-- X2C 钱包余额卡片 -->
-    <div>
+    <div style="flex-shrink:0;">
       <div class="cash-now">
         <div class="cash-now-label">
           <span>X2C Wallet · 实时余额</span>
@@ -1414,12 +1414,12 @@
     </div>
 
     <!-- X2C 收益明细 -->
-    <div>
-      <div class="pane-title" style="margin-bottom: 18px;">
+    <div style="flex:1;min-height:0;display:flex;flex-direction:column;">
+      <div class="pane-title" style="margin-bottom: 18px;flex-shrink:0;">
         <span id="x2cPublishedTitle">收益明细 · X2C</span>
         <span style="font-family:var(--mono);font-size:10px;color:var(--text-3);display:none;" id="x2cPublishedCount">--</span>
       </div>
-      <div class="timeline" id="x2cPublishedList" style="max-height: 400px; overflow-y: auto;">
+      <div class="timeline" id="x2cPublishedList" style="flex:1;min-height:0;overflow-y:auto;padding-right:4px;">
         <div style="color:var(--text-3);font-family:var(--mono);font-size:11px;padding:12px 0;">加载中...</div>
       </div>
     </div>
