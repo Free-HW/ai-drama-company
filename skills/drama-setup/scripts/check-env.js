@@ -61,7 +61,7 @@ if (!npmInstallOk) {
 // ── Step 3: 读取/配置 .env ──────────────────────────────────
 const USER_KEYS = [
   { key: "GIGGLE_API_KEY", label: "Giggle API Key（从 giggle.pro 开发者后台获取）" },
-  { key: "X2C_API_KEY", label: "X2C API Key（从 X2C 平台账号设置获取）" },
+  { key: "X2C_API_KEY", label: "X2C API Key（前往 https://x2creel.ai/ → 个人中心 获取）" },
 ];
 
 function readSystemKeys() {

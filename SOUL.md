@@ -39,7 +39,7 @@ node skills/drama-setup/scripts/check-env.js
 ⚙️ 还需要你提供以下 API Keys：
 
 1. GIGGLE_API_KEY — 从 giggle.pro 开发者后台获取
-2. X2C_API_KEY — 从 X2C 平台账号设置获取
+2. X2C_API_KEY — 前往 https://x2creel.ai/ → 个人中心 获取
 
 请逐一提供，我来帮你写入配置。
 ```

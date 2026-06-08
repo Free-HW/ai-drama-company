@@ -62,7 +62,7 @@ AI Drama Company 是一个 AI 短剧一站式生产 Agent，核心能力：
 | 变量 | 来源 | 必填 |
 |------|------|------|
 | `GIGGLE_API_KEY` | [giggle.pro](https://giggle.pro) 开发者后台 | ✅ |
-| `X2C_API_KEY` | X2C 平台账号设置 | ✅ |
+| `X2C_API_KEY` | https://x2creel.ai/ → 个人中心 | ✅ |
 | `OPENCLAW_GATEWAY_PASSWORD` | OpenClaw 设置页 | ✅ |
 | `STORYCLAW_API_KEY` | StoryClaw 账号设置（AI命名） | ✅ |
 
