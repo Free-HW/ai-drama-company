@@ -42,18 +42,20 @@ app.use(express.json({ limit: '2mb' }));
 app.use(express.static(path.join(__dirname, '..', 'assets')));
 
 
-async function x2cCall(payload) {
-  const apiUrl = process.env.X2C_API_URL;
-  const apiKey = process.env.X2C_API_KEY;
-  if (!apiUrl || !apiKey) throw new Error('Missing env: X2C_API_URL or X2C_API_KEY');
+const X2C_API_ENDPOINT = 'https://eumfmgwxwjyagsvqloac.supabase.co/functions/v1/open-api';
 
-  const resp = await fetch(apiUrl, {
+async function x2cCall(payload) {
+  const apiKey = process.env.X2C_API_KEY;
+  if (!apiKey) throw new Error('Missing env: X2C_API_KEY');
+
+  const resp = await fetch(X2C_API_ENDPOINT, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'X-API-Key': apiKey,
     },
     body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(30000),
   });
 
   const json = await resp.json().catch(() => ({}));
@@ -1195,17 +1197,6 @@ app.get('/api/x2c/wallet/transactions', async (req, res) => {
     res.json({ ok: true, data });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
-  }
-});
-
-// ── X2C 已发布项目列表 ──
-app.get('/api/x2c/projects', async (req, res) => {
-  try {
-    const { page = 1, pageSize = 20, status = 'all' } = req.query;
-    const data = await listPublished({ page: Number(page), pageSize: Number(pageSize), status });
-    res.json({ ok: true, data });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e.message, data: {} });
   }
 });
 
