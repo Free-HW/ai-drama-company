@@ -1194,6 +1194,26 @@ app.get('/api/x2c/balance', async (req, res) => {
   }
 });
 
+// ── Dashboard Overview KPI ──
+app.get('/api/x2c/dashboard/overview', async (req, res) => {
+  try {
+    const data = await x2cCall({ action: 'dashboard/overview' });
+    res.json({ ok: true, data });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message, data: {} });
+  }
+});
+
+// ── Dashboard Platform Breakdown ──
+app.get('/api/x2c/dashboard/platform-breakdown', async (req, res) => {
+  try {
+    const data = await x2cCall({ action: 'dashboard/platform-breakdown' });
+    res.json({ ok: true, data });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message, data: {} });
+  }
+});
+
 // ── X2C 钱包交易记录（收益/消费明细）──
 app.get('/api/x2c/wallet/transactions', async (req, res) => {
   try {

@@ -1544,7 +1544,52 @@ async function loadX2cData() {
       set('x2cWalletAddr', '→ wallet ' + shortWallet);
       set('x2cPendingInfo', `X2C pending: ${fmtX2c(d.x2c_pending_claim)} · locked: ${fmtX2c(d.x2c_pending_release)}`);
     }
-    // 2. 收益/消费明细 (钱包交易记录)
+
+    // 2. Dashboard Overview KPI（A: 收入/ROI/播放量真实数据）
+    try {
+      const ovResp = await fetch('/api/x2c/dashboard/overview');
+      const ovJson = await ovResp.json().catch(() => ({}));
+      if (ovJson.ok && ovJson.data) {
+        const ov = ovJson.data;
+        const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+        set('heroHistoricalUsd', Number(ov.revenue?.historical_usd || 0).toFixed(2));
+        set('heroTodayUsd', '$' + Number(ov.revenue?.today_usd || 0).toFixed(2));
+        set('heroRoi', Math.round(ov.production?.roi_percent || 0).toLocaleString());
+        set('heroNetExpense', Number(ov.production?.net_expense_usd || 0).toFixed(2));
+        set('heroTotalViews', fmtNum(ov.views?.total || 0));
+        set('heroActiveEarning', ov.projects?.active_earning ?? '--');
+        // C: Showcase 统计数字
+        set('showcaseProjectsLive', (ov.projects?.distributed || 0).toLocaleString());
+        set('showcaseEpisodesTotal', fmtNum(ov.projects?.total || 0));
+        set('showcaseRevenue30d', '$' + Number(ov.revenue?.monthly_usd || 0).toFixed(0));
+      }
+    } catch (ovErr) { console.warn('[loadX2cData] overview error:', ovErr); }
+
+    // 3. Platform Breakdown（B: 真实各平台播放量）
+    try {
+      const pbResp = await fetch('/api/x2c/dashboard/platform-breakdown');
+      const pbJson = await pbResp.json().catch(() => ({}));
+      if (pbJson.ok && pbJson.data) {
+        const platforms = pbJson.data.platforms || [];
+        const total = pbJson.data.total || 0;
+        const wrap = document.getElementById('platformBreakdownWrap');
+        const list = document.getElementById('platformBreakdownList');
+        if (list && platforms.length > 0 && total > 0) {
+          const colors = ['var(--gold)', 'var(--green)', 'var(--cyan)', 'var(--text-2)', 'var(--text-3)'];
+          list.innerHTML = platforms.map((p, i) => {
+            const pct = Math.round(p.views / total * 100);
+            return `<div class="platform-row">
+              <span class="platform-name">${p.service}</span>
+              <span class="platform-bar"><span style="width:${pct}%;background:${colors[i]||'var(--text-3)'};display:block;height:100%;"></span></span>
+              <span class="platform-pct">${pct}%</span>
+            </div>`;
+          }).join('');
+          if (wrap) wrap.style.display = '';
+        }
+      }
+    } catch (pbErr) { console.warn('[loadX2cData] platform-breakdown error:', pbErr); }
+
+    // 4. 收益/消费明细 (钱包交易记录)
     try {
       const tResp = await fetch('/api/x2c/wallet/transactions?page=1&pageSize=15&type=all');
       const tJson = await tResp.json().catch(() => ({}));

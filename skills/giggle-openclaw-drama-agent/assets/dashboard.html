@@ -1135,6 +1135,26 @@
         <span style="color:var(--text-3);">available credits</span>
       </div>
     </div>
+    <div class="hero-cell">
+      <div class="hero-label">Historical Revenue</div>
+      <div class="hero-value"><span class="currency">$</span><span class="accent" id="heroHistoricalUsd">--</span></div>
+      <div class="hero-delta"><span style="color:var(--text-3);">today: <span id="heroTodayUsd" style="color:var(--green);">--</span></span></div>
+    </div>
+    <div class="hero-cell">
+      <div class="hero-label">ROI</div>
+      <div class="hero-value"><span id="heroRoi" style="font-size:36px;">--</span><span style="font-size:20px;color:var(--text-3);margin-left:4px;">%</span></div>
+      <div class="hero-delta"><span style="color:var(--text-3);">net expense: $<span id="heroNetExpense">--</span></span></div>
+    </div>
+    <div class="hero-cell">
+      <div class="hero-label">Total Views</div>
+      <div class="hero-value"><span id="heroTotalViews" style="font-size:36px;">--</span></div>
+      <div class="hero-delta"><span style="color:var(--text-3);">active earning: <span id="heroActiveEarning">--</span> projects</span></div>
+    </div>
+  </div>
+  <!-- Platform Breakdown (B: 真实数据) -->
+  <div id="platformBreakdownWrap" style="margin-top:18px;display:none;">
+    <div class="pane-title" style="margin-bottom:10px;"><span>Platform Mix · 实时</span></div>
+    <div id="platformBreakdownList" class="platforms"></div>
   </div>
 </section>
 
@@ -1150,9 +1170,9 @@
       <div class="showcase-subtitle">这些都是真实客户的作品。点开任何一部,看完整的剧本、角色、分镜——免费看完整个生产流程。</div>
     </div>
     <div class="showcase-stats">
-      <div><strong>1,847</strong>studios live</div>
-      <div><strong>112K</strong>episodes shipped</div>
-      <div><strong>$4.2M</strong>creator revenue · 30d</div>
+      <div><strong id="showcaseProjectsLive">--</strong>studios live</div>
+      <div><strong id="showcaseEpisodesTotal">--</strong>episodes shipped</div>
+      <div><strong id="showcaseRevenue30d">--</strong>creator revenue · 30d</div>
     </div>
   </div>
 
