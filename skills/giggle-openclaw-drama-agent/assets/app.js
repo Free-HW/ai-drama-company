@@ -779,10 +779,10 @@
       const hasAnyVideo = eps.some(ep => ep.export_url);
       const alreadyPublished = !!proj.x2c_project_id;
       const x2cStatus = proj.x2c_status || '';
+      const canPublish = allEpsDone && hasAnyVideo;
       const publishBtnLabel = alreadyPublished
         ? (x2cStatus === 'processing' ? '⏳ 审核中 X2C' : x2cStatus === 'approved' ? '✅ 已上线 X2C' : x2cStatus === 'rejected' ? '❌ 被拒绝 X2C' : '✅ 已发布 X2C')
         : canPublish ? '📤 发布到 X2C' : '📤 发布到 X2C（制作完成后可用）';
-      const canPublish = allEpsDone && hasAnyVideo;
       const btn = document.createElement('button');
       btn.id = 'manual-publish-btn';
       btn.className = 'oclaw-btn';
