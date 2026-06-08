@@ -1245,6 +1245,38 @@
     }, 1000);
   }
 
+  // ── 时钟 + Uptime 动态更新 ──
+  const _startTime = Date.now();
+  function updateClockAndUptime() {
+    const clockEl = document.getElementById('clockDisplay');
+    const uptimeEl = document.getElementById('uptimeDisplay');
+    const now = new Date();
+    if (clockEl) {
+      const pad = n => String(n).padStart(2, '0');
+      // 使用本地时区显示当前时间
+      const dateStr = now.getFullYear() + '·' +
+        pad(now.getMonth() + 1) + '·' + pad(now.getDate());
+      const timeStr = pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds());
+      const tz = 'UTC' + (now.getTimezoneOffset() <= 0
+        ? '+' + String(-now.getTimezoneOffset() / 60).replace(/\.5$/, ':30')
+        : '-' + String(now.getTimezoneOffset() / 60).replace(/\.5$/, ':30'));
+      clockEl.textContent = dateStr + ' · ' + timeStr + ' ' + tz;
+    }
+    if (uptimeEl) {
+      const elapsed = Date.now() - _startTime;
+      const s = Math.floor(elapsed / 1000) % 60;
+      const m = Math.floor(elapsed / 60000) % 60;
+      const h = Math.floor(elapsed / 3600000) % 24;
+      const d = Math.floor(elapsed / 86400000);
+      const pad = n => String(n).padStart(2, '0');
+      uptimeEl.textContent = 'UPTIME ' +
+        (d > 0 ? d + 'D ' : '') +
+        pad(h) + ':' + pad(m) + ':' + pad(s);
+    }
+  }
+  updateClockAndUptime();
+  setInterval(updateClockAndUptime, 1000);
+
   loadX2CShowcase();
 })();
 
