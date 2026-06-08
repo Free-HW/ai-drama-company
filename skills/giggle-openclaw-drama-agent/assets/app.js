@@ -469,7 +469,7 @@
           return;
         }
 
-        // 刷新剧集列表
+        // 刷新剧集列表（只在当前选中项目匹配时刷新，防止覆盖用户手动切换的项目）
         if (selectedStoryProjectUuid === projectUuid) {
           renderStoryEpisodes(projectUuid).catch(() => {});
         }
@@ -750,10 +750,14 @@
     }
   }
 
+  let _renderEpSeq = 0; // 防并发请求覆盖
   async function renderStoryEpisodes(projectUuid) {
     if (!wall || !projectUuid) return;
+    const seq = ++_renderEpSeq;
     const resp = await fetch(`/api/agent/projects/${projectUuid}`);
+    if (seq !== _renderEpSeq) return; // 更新的请求已发出，丢弃过期响应
     const json = await resp.json();
+    if (seq !== _renderEpSeq) return; // 响应回来时再检查一次
     const data = json.data || {};
     const eps = data.episodes || [];
     const mappings = data.mappings || [];
