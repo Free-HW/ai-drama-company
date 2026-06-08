@@ -25,11 +25,19 @@ class GiggleClient {
         if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
       });
     }
-    const res = await fetch(url, {
-      method,
-      headers: this.headers(),
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s 请求超时
+    let res;
+    try {
+      res = await fetch(url, {
+        method,
+        headers: this.headers(),
+        body: body ? JSON.stringify(body) : undefined,
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
     const json = await res.json().catch(() => ({}));
     const code = json && Object.prototype.hasOwnProperty.call(json, 'code') ? String(json.code) : null;
     const codeOk = code === null || code === '0' || code === '200';
@@ -156,8 +164,13 @@ async function poll({ fn, isDone, isFailed, intervalMs, timeoutMs, onTick }) {
       current = await fn();
       fnErrCount = 0; // 成功后重置计数
     } catch (e) {
+      // 请求超时（AbortError）直接重试，不计入失败次数
+      if (e.name === 'AbortError' || e.message?.includes('abort')) {
+        await sleep(intervalMs);
+        continue;
+      }
       fnErrCount++;
-      if (fnErrCount >= 3) throw e; // 连续 3 次失败才真正抛出
+      if (fnErrCount >= 3) throw e; // 连续 3 次非超时失败才真正抛出
       await sleep(intervalMs);
       continue;
     }
