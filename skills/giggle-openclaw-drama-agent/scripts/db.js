@@ -6,7 +6,10 @@ const path = require('path');
 const fs = require('fs');
 const Database = require('better-sqlite3');
 
-const DB_PATH = process.env.LOCAL_DB_PATH || path.join(process.cwd(), 'outputs', 'drama_agent.db');
+const DB_PATH = process.env.LOCAL_DB_PATH || path.join(
+  process.env.HOME || require('os').homedir(),
+  '.openclaw', 'workspace-ai-drama-company', 'outputs', 'drama_agent.db'
+);
 
 function ensureDbDir() {
   fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
