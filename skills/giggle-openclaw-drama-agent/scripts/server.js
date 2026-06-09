@@ -1104,7 +1104,7 @@ async function runAutoRun(projectUuid) {
       if (!c.library_character_id) continue;
       try {
         const r = await giggle.deleteCharacterFromLibrary(c.library_character_id);
-        pipelineEmit('agent-b', 'AGENT-B', `[CastingAgent] 删除角色 library_character_id=${c.library_character_id} -> ${JSON.stringify(r?.data || r)}`, 'casting');
+        pipelineEmit('agent-b', 'AGENT-B', `[CastingAgent] 删除角色 library_character_id=${c.library_character_id} 完成`, 'casting');
         deleted.push(c.library_character_id);
       } catch (e) {
         pipelineEmit('agent-b', 'AGENT-B', `[CastingAgent] 删除角色失败 library_character_id=${c.library_character_id}: ${e.message}`, 'casting');

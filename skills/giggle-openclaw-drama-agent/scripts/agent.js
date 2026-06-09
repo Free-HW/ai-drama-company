@@ -75,7 +75,7 @@ class DramaAgent {
     // Step 3: 生成角色（含跨剧集一致性）
     emit('agent-b', 'AGENT-B', '[CastingAgent] 生成角色...', 'casting');
     const genCharResp = await this.giggle.generateCharacters(projectId);
-    emit('agent-b', 'AGENT-B', `[CastingAgent] generateCharacters 请求: projectId=${projectId} 响应: ${JSON.stringify(genCharResp?.data || genCharResp).slice(0, 200)}`, 'casting');
+    emit('agent-b', 'AGENT-B', `[CastingAgent] generateCharacters 已触发`, 'casting');
 
     // 等 Giggle 把角色生成任务调度起来（generateCharacters 是异步触发，需要一定时间准备数据）
     emit('agent-b', 'AGENT-B', '[CastingAgent] 等待 Giggle 准备角色数据...', 'casting');
@@ -134,7 +134,7 @@ class DramaAgent {
               parent_id: c.parent_id || 0,
               library_character_id: existing.library_character_id,
             });
-            emit('agent-b', 'AGENT-B', `[CastingAgent] add_by_library返回: ${JSON.stringify(addResp?.data || addResp)}`, 'casting');
+            emit('agent-b', 'AGENT-B', `[CastingAgent] 角色复用成功: ${c.name}`, 'casting');
           } catch (e) {
             emit('agent-b', 'AGENT-B', `[CastingAgent] 角色复用失败 ${c.name}: ${e.message}`, 'casting');
           }
@@ -203,7 +203,7 @@ class DramaAgent {
     });
     emit('agent-c', 'AGENT-C', '[StoryboardAgent] 分镜列表就绪，开始生成分镜图...', 'storyboard');
     const imgResp = await this.giggle.autoGenerateImages(projectId, 'seedream45');
-    emit('agent-c', 'AGENT-C', `[StoryboardAgent] autoGenerateImages 响应: ${JSON.stringify(imgResp?.data || imgResp).slice(0, 200)}`, 'storyboard');
+    emit('agent-c', 'AGENT-C', `[StoryboardAgent] autoGenerateImages 已触发`, 'storyboard');
     // 等 Giggle 把图片生成任务调度起来（异步触发）
     await new Promise(r => setTimeout(r, 5000));
 
