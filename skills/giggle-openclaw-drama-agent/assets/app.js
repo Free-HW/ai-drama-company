@@ -239,10 +239,22 @@
           <div class="case-hover-cta">→ VIEW PERFORMANCE DETAIL</div>
         `;
         card.addEventListener('click', async () => {
-          const dResp = await fetch('/api/x2c/projects/' + p.id);
-          const dJson = await dResp.json();
-          if (!dJson.ok) throw new Error(dJson.error || 'detail failed');
-          openX2CModal(dJson.data);
+          // 立即用列表数据打开 modal，无需等待详情接口
+          openX2CModal({ project: {
+            id: p.id,
+            title: p.title,
+            cover_media_url: p.cover_media_url,
+            status: p.status,
+            production_source: p.production_source || 'compute_generated',
+            views: { total: p.total_views, tiktok: p.platform_views?.tiktok || 0, youtube: p.platform_views?.youtube || 0 },
+            earnings: { total_usd: p.cumulative_revenue_usd || 0, today_usd: p.today_usd || 0 },
+          }});
+          // 后台加载详情并更新 modal
+          try {
+            const dResp = await fetch('/api/x2c/projects/' + p.id);
+            const dJson = await dResp.json();
+            if (dJson.ok) openX2CModal(dJson.data);
+          } catch (_) {}
         });
         rail.appendChild(card);
       });
