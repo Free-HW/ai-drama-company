@@ -1022,6 +1022,113 @@
     .shot-grid { grid-template-columns: repeat(6, 1fr); }
   }
 
+  /* ============= 手机适配 (max-width: 768px) ============= */
+  @media (max-width: 768px) {
+    /* 顶部 */
+    .topbar { padding: 12px 16px; flex-wrap: wrap; gap: 8px; }
+    .brand-sub { display: none; }
+    .brand-name { font-size: 16px; }
+    .top-meta { gap: 10px; flex-wrap: wrap; }
+    .uptime { display: none; }
+    .clock { font-size: 10px; }
+
+    /* Hero KPI 网格：7格 → 2列 */
+    .hero { padding: 20px 16px 24px; }
+    .hero-grid {
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .hero-cell {
+      padding: 0;
+      border-right: none;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 14px;
+    }
+    .hero-cell:last-child { border-bottom: none; padding-bottom: 0; }
+    .hero-value { font-size: 36px; letter-spacing: -1px; }
+    .hero-value .currency { font-size: 18px; }
+    .hero-delta { font-size: 10px; }
+    #platformBreakdownWrap { margin-top: 12px; }
+
+    /* 主内容三栏 → 单列滚动 */
+    .main {
+      grid-template-columns: 1fr;
+      height: auto;
+      overflow: visible;
+    }
+    .pane-left {
+      height: auto;
+      overflow: visible;
+      border-right: none;
+      border-bottom: 1px solid var(--line);
+      padding: 16px;
+      min-height: 0;
+    }
+    .pane-left > div[style*="overflow-y"] {
+      max-height: 480px;
+      overflow-y: auto;
+    }
+    .pane-center {
+      border-right: none;
+      border-left: none;
+      height: auto;
+      min-height: 0;
+    }
+    .pane-right {
+      border-left: none;
+      border-top: 1px solid var(--line);
+      height: auto;
+      overflow: visible;
+      padding: 16px;
+    }
+    /* 收益明细列表手机限高 */
+    #x2cPublishedList { max-height: 360px; overflow-y: auto; }
+
+    /* 标题区 */
+    .pipeline-title { font-size: 28px; }
+    .pipeline-sub { font-size: 12px; }
+
+    /* Showcase */
+    .showcase-wrap { padding: 24px 0; }
+    .showcase-eyebrow { padding: 0 16px; font-size: 10px; }
+    .showcase-header {
+      padding: 0 16px;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .showcase-title { font-size: 28px; line-height: 1.2; }
+    .showcase-subtitle { font-size: 13px; }
+    .showcase-stats { gap: 16px; }
+    .showcase-stats strong { font-size: 20px; }
+    .showcase-rail { padding: 8px 16px 20px; gap: 12px; }
+    .case-card { min-width: 240px; }
+
+    /* 底部 CTA */
+    .cta-strip { flex-direction: column; align-items: flex-start; gap: 16px; padding: 24px 16px; }
+    .cta-headline { font-size: 28px; }
+
+    /* Modal */
+    .modal-shell { width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; }
+    .modal-top-bar { padding: 12px 16px; flex-wrap: wrap; gap: 8px; }
+    .x2c-modal-grid { grid-template-columns: 1fr; }
+    .x2c-kpi-row { grid-template-columns: repeat(2, 1fr); }
+    .x2c-mini-grid { grid-template-columns: repeat(2, 1fr); }
+
+    /* Agent 卡片 → 单列 */
+    .agent-grid { grid-template-columns: 1fr; }
+    .pipeline-stages { gap: 6px; overflow-x: auto; flex-wrap: nowrap; padding-bottom: 4px; }
+    .pipeline-step { padding: 6px 10px; font-size: 10px; white-space: nowrap; }
+
+    /* 主控制台区 */
+    .agent-terminal-wrap { padding: 20px 16px 0; }
+    .terminal-title { font-size: 32px; }
+    .terminal-sub { font-size: 12px; }
+    .terminal-window { margin: 16px 0 0; }
+    .terminal-caption { padding: 8px 0; gap: 8px; flex-wrap: wrap; }
+  }
+
   body.no-scroll { overflow: hidden; }
 </style>
 </head>
