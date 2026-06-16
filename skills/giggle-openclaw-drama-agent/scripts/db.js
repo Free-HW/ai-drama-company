@@ -111,6 +111,17 @@ async function initSchema(db) {
       created_at TEXT,
       UNIQUE(story_project_uuid, name)
     );
+    CREATE TABLE IF NOT EXISTS service_credentials (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      provider TEXT NOT NULL,
+      user_id TEXT DEFAULT "",
+      email TEXT DEFAULT "",
+      api_key TEXT NOT NULL,
+      metadata TEXT DEFAULT "{}",
+      created_at TEXT,
+      updated_at TEXT,
+      UNIQUE(provider, user_id)
+    );
   `);
   // 迁移：已有安装的数据库补充新字段
   const cols = db.prepare("PRAGMA table_info(story_projects)").all().map(c => c.name);
@@ -295,6 +306,47 @@ async function saveGlobalCharacter(db, { storyProjectUuid, name, gender, library
   );
 }
 
+async function upsertServiceCredential(db, { provider, userId, email, apiKey, metadata }) {
+  const now = new Date().toISOString();
+  const normalizedProvider = String(provider || '').trim().toLowerCase();
+  const normalizedUserId = String(userId || '').trim();
+  await run(
+    db,
+    `INSERT INTO service_credentials (provider,user_id,email,api_key,metadata,created_at,updated_at)
+     VALUES (?,?,?,?,?,?,?)
+     ON CONFLICT(provider,user_id) DO UPDATE SET
+       email=excluded.email,
+       api_key=excluded.api_key,
+       metadata=excluded.metadata,
+       updated_at=excluded.updated_at`,
+    [
+      normalizedProvider,
+      normalizedUserId,
+      String(email || '').trim(),
+      String(apiKey || ''),
+      JSON.stringify(metadata || {}),
+      now,
+      now,
+    ],
+  );
+}
+
+async function getServiceCredential(db, { provider, userId }) {
+  return get(
+    db,
+    `SELECT * FROM service_credentials WHERE provider=? AND user_id=? LIMIT 1`,
+    [String(provider || '').trim().toLowerCase(), String(userId || '').trim()],
+  );
+}
+
+async function getLatestServiceCredential(db, provider) {
+  return get(
+    db,
+    `SELECT * FROM service_credentials WHERE provider=? ORDER BY updated_at DESC, id DESC LIMIT 1`,
+    [String(provider || '').trim().toLowerCase()],
+  );
+}
+
 
 module.exports = {
   DB_PATH, openDb, initSchema, createRun, setProjectId, saveScript,
@@ -305,4 +357,5 @@ module.exports = {
   getProjectEpisodeByNo, updateProjectEpisode, upsertProjectCharacter,
   listProjectCharacters, upsertCharacterMapping, listCharacterMappings,
   getGlobalCharacterByName, saveGlobalCharacter,
+  upsertServiceCredential, getServiceCredential, getLatestServiceCredential,
 };

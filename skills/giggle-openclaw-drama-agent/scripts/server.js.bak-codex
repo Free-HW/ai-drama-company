@@ -33,8 +33,6 @@ const {
   listProjectCharacters,
   upsertCharacterMapping,
   listCharacterMappings,
-  upsertServiceCredential,
-  getLatestServiceCredential,
 } = require('./db');
 const { publishToX2C, publishToX2CWithProgress, getWalletBalance, getWalletTransactions, listPublished, queryPublished, getVideoStats } = require('./x2cPublish');
 
@@ -54,7 +52,7 @@ function reloadEnv() {
 
 async function x2cCall(payload) {
   reloadEnv();
-  const apiKey = await resolveServiceApiKey('x2c');
+  const apiKey = process.env.X2C_API_KEY;
   if (!apiKey) throw new Error('X2C_API_KEY 未配置，请在 .env 中添加 X2C_API_KEY 并重启服务');
 
   const resp = await fetch(X2C_API_ENDPOINT, {
@@ -72,75 +70,6 @@ async function x2cCall(payload) {
     throw new Error(json.error || json.message || json.msg || 'X2C API request failed');
   }
   return json;
-}
-
-async function resolveServiceApiKey(provider) {
-  const normalizedProvider = String(provider || '').trim().toLowerCase();
-  if (normalizedProvider === 'giggle' && process.env.GIGGLE_API_KEY) {
-    return process.env.GIGGLE_API_KEY;
-  }
-  if (normalizedProvider === 'x2c' && process.env.X2C_API_KEY) {
-    return process.env.X2C_API_KEY;
-  }
-
-  const stored = await getLatestServiceCredential(db, normalizedProvider);
-  if (stored?.api_key) {
-    if (normalizedProvider === 'giggle') {
-      process.env.GIGGLE_API_KEY = stored.api_key;
-    }
-    if (normalizedProvider === 'x2c') {
-      process.env.X2C_API_KEY = stored.api_key;
-    }
-    return stored.api_key;
-  }
-
-  return '';
-}
-
-async function createGiggleClient() {
-  const apiKey = await resolveServiceApiKey('giggle');
-  return new GiggleClient({
-    baseUrl: GIGGLE_BASE_URL,
-    apiKey,
-    authMode: process.env.GIGGLE_AUTH_MODE || 'x-auth',
-  });
-}
-
-async function ensureX2CApiKeyLoaded() {
-  const apiKey = await resolveServiceApiKey('x2c');
-  if (!apiKey) {
-    throw new Error('X2C_API_KEY 未配置，请先迁移用户的 X2C 凭证');
-  }
-  process.env.X2C_API_KEY = apiKey;
-  return apiKey;
-}
-
-function asObject(value) {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
-}
-
-function buildVisualPrompt(roleLabel, persona) {
-  return [roleLabel, persona].filter(Boolean).join(' | ');
-}
-
-function normalizeImportedEpisodeStatus(episode) {
-  if (episode?.exportUrl) return 'completed';
-  if (episode?.giggleProjectId) return 'phase1_done';
-  if (episode?.status === 'failed') return 'failed';
-  return 'planned';
-}
-
-function normalizeImportedProjectStatus(episodes) {
-  const hasCompleted = episodes.some((episode) => Boolean(episode.exportUrl));
-  if (hasCompleted) return 'completed';
-  const hasPhase1 = episodes.some((episode) => Boolean(episode.giggleProjectId));
-  if (hasPhase1) return 'ready_for_phase2';
-  return 'planned';
-}
-
-function deriveCoverUrlFromExportUrl(exportUrl) {
-  const thumbMatch = String(exportUrl || '').match(/(https:\/\/assets\.giggle\.pro\/public\/ai_director\/[^\/]+\/[^.?]+)\.mp4/);
-  return thumbMatch ? `${thumbMatch[1]}.thumb.jpg` : '';
 }
 
 const db = openDb();
@@ -560,220 +489,6 @@ app.get('/api/agent/projects', async (req, res) => {
   }
 });
 
-app.post('/api/agent/import-project', async (req, res) => {
-  try {
-    const payload = asObject(req.body);
-    const projectInput = asObject(payload.project);
-    const credentialsInput = asObject(payload.credentials);
-    const episodesInput = Array.isArray(payload.episodes) ? payload.episodes : [];
-    const charactersInput = Array.isArray(payload.characters) ? payload.characters : [];
-    const logsInput = Array.isArray(payload.logs) ? payload.logs : [];
-
-    const projectUuid = String(projectInput.projectUuid || payload.agentProjectUuid || randomUUID());
-    const title = String(projectInput.title || '').trim();
-    const idea = String(projectInput.idea || '').trim();
-
-    if (!title) {
-      return res.status(400).json({ ok: false, error: 'project.title is required' });
-    }
-    if (!episodesInput.length) {
-      return res.status(400).json({ ok: false, error: 'episodes are required' });
-    }
-
-    const importRunId = randomUUID();
-    const now = new Date().toISOString();
-    const existingProject = await getStoryProject(db, projectUuid);
-    const normalizedEmail = String(credentialsInput.email || payload.user?.email || '').trim().toLowerCase();
-
-    if (credentialsInput.giggleApiKey) {
-      await upsertServiceCredential(db, {
-        provider: 'giggle',
-        userId: String(payload.user?.userId || ''),
-        email: normalizedEmail,
-        apiKey: String(credentialsInput.giggleApiKey),
-        metadata: {
-          keyId: credentialsInput.giggleKeyId || null,
-          keyName: credentialsInput.giggleKeyName || '',
-          syncedAt: credentialsInput.syncedAt || now,
-        },
-      });
-      process.env.GIGGLE_API_KEY = String(credentialsInput.giggleApiKey);
-    }
-
-    if (credentialsInput.x2cApiKey) {
-      await upsertServiceCredential(db, {
-        provider: 'x2c',
-        userId: String(payload.user?.userId || ''),
-        email: normalizedEmail,
-        apiKey: String(credentialsInput.x2cApiKey),
-        metadata: {
-          x2cUserId: credentialsInput.x2cUserId || null,
-          syncedAt: credentialsInput.syncedAt || now,
-        },
-      });
-      process.env.X2C_API_KEY = String(credentialsInput.x2cApiKey);
-    }
-
-    if (!existingProject) {
-      await createStoryProject(db, {
-        projectUuid,
-        name: title,
-        idea,
-        language: projectInput.language || projectInput.locale || 'zh-CN',
-        aspect: projectInput.aspect || '9:16',
-        style: projectInput.styleName || '',
-        episodeCount: Number(projectInput.episodeCount || episodesInput.length || 1),
-        styleId: Number(projectInput.styleId || 146),
-        videoDuration: Number(projectInput.durationSeconds || 60),
-      });
-    }
-
-    db.prepare(
-      `UPDATE story_projects
-       SET name=?, idea=?, language=?, aspect=?, style=?, episode_count=?, style_id=?, video_duration=?, cover_url=?, script_run_id=?, updated_at=?
-       WHERE project_uuid=?`,
-    ).run(
-      title,
-      idea,
-      projectInput.language || projectInput.locale || 'zh-CN',
-      projectInput.aspect || '9:16',
-      projectInput.styleName || '',
-      Number(projectInput.episodeCount || episodesInput.length || 1),
-      Number(projectInput.styleId || 146),
-      Number(projectInput.durationSeconds || 60),
-      projectInput.coverUrl || '',
-      importRunId,
-      now,
-      projectUuid,
-    );
-
-    await upsertProjectBible(db, {
-      projectUuid,
-      worldSetting: '',
-      tone: '',
-      styleRules: projectInput.styleReason || '',
-      relationshipNotes: '',
-      rawJson: {
-        source: payload.source || 'storyclaw-website',
-        schemaVersion: payload.schemaVersion || 1,
-        websiteProjectId: payload.websiteProjectId || '',
-        user: asObject(payload.user),
-        importedAt: now,
-        logs: logsInput,
-      },
-    });
-
-    const normalizedEpisodes = episodesInput.map((episode) => ({
-      episode_no: Number(episode.episodeNo || 0),
-      title: String(episode.title || '').trim(),
-      outline: String(episode.outline || '').trim(),
-      script_text: String(episode.scriptText || '').trim(),
-      status: normalizeImportedEpisodeStatus(episode),
-    })).filter((episode) => episode.episode_no > 0);
-
-    await replaceProjectEpisodes(db, {
-      projectUuid,
-      episodes: normalizedEpisodes,
-    });
-
-    for (const episode of episodesInput) {
-      const episodeNo = Number(episode.episodeNo || 0);
-      if (!episodeNo) continue;
-      db.prepare(
-        `UPDATE project_episodes
-         SET giggle_project_id=?, cover_url=?, export_url=?, updated_at=?
-         WHERE project_uuid=? AND episode_no=?`,
-      ).run(
-        episode.giggleProjectId || '',
-        episode.coverUrl || '',
-        episode.exportUrl || '',
-        now,
-        projectUuid,
-        episodeNo,
-      );
-    }
-
-    db.prepare('DELETE FROM character_mappings WHERE project_uuid=?').run(projectUuid);
-    db.prepare('DELETE FROM project_characters WHERE project_uuid=?').run(projectUuid);
-
-    for (const character of charactersInput) {
-      const characterKey = String(character.characterKey || '').trim();
-      if (!characterKey) continue;
-
-      await upsertProjectCharacter(db, {
-        projectUuid,
-        characterKey,
-        name: character.name || characterKey,
-        gender: character.gender || '',
-        persona: character.persona || '',
-        visualPrompt: buildVisualPrompt(character.roleLabel || '', character.persona || ''),
-        voicePref: '',
-      });
-
-      if (character.giggleCharacterId || character.giggleAssetId || character.imageUrl) {
-        await upsertCharacterMapping(db, {
-          projectUuid,
-          projectCharacterKey: characterKey,
-          giggleCharacterId: character.giggleCharacterId || '',
-          giggleAssetId: character.giggleAssetId || '',
-          rawJson: {
-            ...(asObject(character.rawJson)),
-            image_url: character.imageUrl || '',
-            image_signed_url: character.imageUrl || '',
-            name: character.name || characterKey,
-            gender: character.gender || '',
-            role_label: character.roleLabel || '',
-            persona: character.persona || '',
-          },
-        });
-      }
-    }
-
-    await createRun(db, {
-      runId: importRunId,
-      idea,
-      projectName: `${title} · imported`,
-    });
-    await setProjectId(db, { runId: importRunId, projectId: projectUuid });
-    await addLog(db, {
-      runId: importRunId,
-      stage: 'system',
-      tagClass: 'system',
-      tagText: 'SYSTEM',
-      payload: `[Import] 从 StoryClaw 导入项目前半程数据，项目 ${title}`,
-    });
-    await addLog(db, {
-      runId: importRunId,
-      stage: 'system',
-      tagClass: 'system',
-      tagText: 'SYSTEM',
-      payload: `[Import] 导入 ${normalizedEpisodes.length} 集剧本，${charactersInput.length} 个角色，凭证：Giggle=${credentialsInput.giggleApiKey ? 'yes' : 'no'}，X2C=${credentialsInput.x2cApiKey ? 'yes' : 'no'}`,
-    });
-    await finishRun(db, { runId: importRunId, status: 'completed', exportUrl: '' });
-
-    const importedStatus = normalizeImportedProjectStatus(episodesInput);
-    await setStoryProjectStatus(db, { projectUuid, status: importedStatus });
-
-    const project = await getStoryProject(db, projectUuid);
-    const episodes = await listProjectEpisodesByUuid(db, projectUuid);
-    const characters = await listProjectCharacters(db, projectUuid);
-
-    res.json({
-      ok: true,
-      data: {
-        projectUuid,
-        importRunId,
-        status: importedStatus,
-        project,
-        episodes,
-        characters,
-      },
-    });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
-  }
-});
-
 app.get('/api/agent/projects/:projectUuid', async (req, res) => {
   try {
     const project = await getStoryProject(db, req.params.projectUuid);
@@ -799,7 +514,7 @@ app.post('/api/agent/projects/:projectUuid/episodes/:episodeNo/run', async (req,
   const { projectUuid, episodeNo } = req.params;
   try {
     const missing = [];
-    if (!(await resolveServiceApiKey('giggle'))) missing.push('GIGGLE_API_KEY');
+    if (!process.env.GIGGLE_API_KEY) missing.push('GIGGLE_API_KEY');
     if (missing.length) return res.status(400).json({ ok: false, error: `Missing env: ${missing.join(', ')}` });
 
     const project = await getStoryProject(db, projectUuid);
@@ -834,7 +549,11 @@ app.post('/api/agent/projects/:projectUuid/episodes/:episodeNo/run', async (req,
 
     (async () => {
       try {
-        const giggle = await createGiggleClient();
+        const giggle = new GiggleClient({
+          baseUrl: GIGGLE_BASE_URL,
+          apiKey: process.env.GIGGLE_API_KEY,
+          authMode: process.env.GIGGLE_AUTH_MODE || 'x-auth',
+        });
         const agent = new DramaAgent({
           giggle,
           pollIntervalMs: Number(process.env.POLL_INTERVAL_MS || 5000),
@@ -908,7 +627,7 @@ app.post('/api/agent/run', async (req, res) => {
   }
 
   const missing = [];
-  if (!(await resolveServiceApiKey('giggle'))) missing.push('GIGGLE_API_KEY');
+  if (!process.env.GIGGLE_API_KEY) missing.push('GIGGLE_API_KEY');
   if (missing.length) {
     return res.status(400).json({ ok: false, error: `Missing env: ${missing.join(', ')}` });
   }
@@ -924,7 +643,11 @@ app.post('/api/agent/run', async (req, res) => {
 
   (async () => {
     try {
-      const giggle = await createGiggleClient();
+      const giggle = new GiggleClient({
+        baseUrl: GIGGLE_BASE_URL,
+        apiKey: process.env.GIGGLE_API_KEY,
+        authMode: process.env.GIGGLE_AUTH_MODE || 'x-auth',
+      });
 
       const agent = new DramaAgent({
         giggle,
@@ -1175,7 +898,11 @@ app.get('/api/agent/projects/:projectUuid/shots', async (req, res) => {
   try {
     const ep = await getProjectEpisodeByNo(db, { projectUuid: req.params.projectUuid, episodeNo: Number(req.query.episode_no || 1) });
     if (!ep?.giggle_project_id) return res.json({ ok: true, data: [] });
-    const giggle = await createGiggleClient();
+    const giggle = new GiggleClient({
+      baseUrl: GIGGLE_BASE_URL,
+      apiKey: process.env.GIGGLE_API_KEY,
+      authMode: process.env.GIGGLE_AUTH_MODE || 'x-auth',
+    });
     const r = await giggle.listShots(ep.giggle_project_id);
     res.json({ ok: true, data: r.data?.shot_list || [] });
   } catch (e) {
@@ -1189,7 +916,7 @@ async function runAutoRun(projectUuid) {
     if (!project) throw new Error('project not found: ' + projectUuid);
 
     // 开始前检查必要环境变量，避免初始化平台后才报错导致状态脱节
-    if (!(await resolveServiceApiKey('giggle'))) {
+    if (!process.env.GIGGLE_API_KEY) {
       await setStoryProjectStatus(db, { projectUuid, status: 'failed' });
       console.error(`[runAutoRun] GIGGLE_API_KEY 未配置，無法启动流水线 (project: ${projectUuid})`);
       throw new Error('GIGGLE_API_KEY is not configured. Please set it in .env and restart.');
@@ -1215,7 +942,11 @@ async function runAutoRun(projectUuid) {
     await setStoryProjectStatus(db, { projectUuid, status: 'running' });
     await updateProjectEpisode(db, { projectUuid, status: 'running' });
 
-        const giggle = await createGiggleClient();
+    const giggle = new GiggleClient({
+      baseUrl: GIGGLE_BASE_URL,
+      apiKey: process.env.GIGGLE_API_KEY,
+      authMode: process.env.GIGGLE_AUTH_MODE || 'x-auth',
+    });
     const agent = new DramaAgent({
       giggle,
       pollIntervalMs: Number(process.env.POLL_INTERVAL_MS || 5000),
@@ -1395,7 +1126,6 @@ async function runAutoRun(projectUuid) {
       if (!project?.x2c_project_id) {
         pipelineEmit('system', 'SYSTEM', '[X2C] 开始自动发布到 X2C 平台...', 'system');
         try {
-          await ensureX2CApiKeyLoaded();
           // 需求3：按集数升序排列，只发布有 export_url 的集
           const episodesForPublish = finalEps
             .filter(e => e.export_url)
@@ -1429,166 +1159,8 @@ async function runAutoRun(projectUuid) {
     return { pipelineRunId, phase1Count: episodes.length, deletedCharacters: deleted };
 }
 
-async function runPhase2Only(projectUuid) {
-    const project = await getStoryProject(db, projectUuid);
-    if (!project) throw new Error('project not found: ' + projectUuid);
-
-    if (!(await resolveServiceApiKey('giggle'))) {
-      await setStoryProjectStatus(db, { projectUuid, status: 'failed' });
-      throw new Error('GIGGLE_API_KEY is not configured. Please set it in .env and restart.');
-    }
-
-    const episodes = await listProjectEpisodesByUuid(db, projectUuid);
-    const pendingEpisodes = episodes.filter((ep) => ep.giggle_project_id && !(ep.status === 'completed' && ep.export_url));
-    if (!pendingEpisodes.length) throw new Error('no phase2-ready episodes found');
-
-    const pipelineRunId = require('crypto').randomUUID();
-    await createRun(db, {
-      runId: pipelineRunId,
-      idea: project.idea,
-      projectName: `${project.name} 手动启动视频制作`,
-    });
-    await setProjectId(db, { runId: pipelineRunId, projectId: projectUuid });
-    const pipelineEmit = (tagClass, tagText, payload, stage) => {
-      addLog(db, { runId: pipelineRunId, stage, tagClass, tagText, payload }).catch(() => {});
-    };
-
-    await setStoryProjectStatus(db, { projectUuid, status: 'running' });
-    pipelineEmit('system', 'SYSTEM', `[Phase2] 开始处理 ${pendingEpisodes.length} 集视频制作`, 'system');
-
-    const giggle = await createGiggleClient();
-    const agent = new DramaAgent({
-      giggle,
-      pollIntervalMs: Number(process.env.POLL_INTERVAL_MS || 5000),
-      pollTimeoutMs: Number(process.env.POLL_TIMEOUT_MS || 3600000),
-    });
-
-    const styleId = project.style_id || 146;
-    const videoDuration = project.video_duration || 60;
-
-    for (const ep of pendingEpisodes) {
-      if (ep.status === 'completed' && ep.export_url) {
-        pipelineEmit('system', 'SYSTEM', `[Phase2] EP${ep.episode_no} 已完成，跳过`, 'system');
-        continue;
-      }
-
-      let runId = ep.run_id;
-      if (!runId) {
-        runId = require('crypto').randomUUID();
-        await createRun(db, {
-          runId,
-          idea: ep.script_text || ep.outline || project.idea,
-          projectName: `${project.name}-EP${String(ep.episode_no).padStart(2, '0')}`,
-        });
-        db.prepare('UPDATE project_episodes SET run_id=?,updated_at=? WHERE project_uuid=? AND episode_no=?')
-          .run(runId, new Date().toISOString(), projectUuid, ep.episode_no);
-      }
-
-      db.prepare('UPDATE project_episodes SET status=?,updated_at=? WHERE project_uuid=? AND episode_no=?')
-        .run('running', new Date().toISOString(), projectUuid, ep.episode_no);
-      db.prepare('UPDATE runs SET status=?,updated_at=? WHERE run_id=?')
-        .run('running', new Date().toISOString(), runId);
-
-      const emit = (tagClass, tagText, payload, stage) => {
-        addLog(db, { runId, stage, tagClass, tagText, payload }).catch(() => {});
-      };
-
-      try {
-        pipelineEmit('system', 'SYSTEM', `[Phase2] EP${ep.episode_no} 开始续跑视频制作`, 'system');
-        const retryResult = await agent.runRetry({
-          idea: ep.script_text || ep.outline || project.idea,
-          projectName: `${project.name}-EP${String(ep.episode_no).padStart(2, '0')}`,
-          aspect: project.aspect || '16:9',
-          language: project.language || 'zh-CN',
-          videoDuration,
-          styleId,
-          videoModel: 'seedance-2.0-pro',
-          secondModel: 'seedance-2.0-pro',
-          db,
-          storyProjectUuid: projectUuid,
-          runId,
-          episodeNo: ep.episode_no,
-          giggleProjectId: ep.giggle_project_id,
-        }, emit);
-
-        const exportUrl = retryResult.export?.videoDownloadUrl || retryResult.export?.videoSignedUrl || '';
-        const coverUrl = retryResult.export?.videoThumbnailUrl || deriveCoverUrlFromExportUrl(exportUrl) || ep.cover_url || '';
-        const giggleProjectId = retryResult.projectId || ep.giggle_project_id || '';
-
-        await finishRun(db, { runId, status: 'completed', exportUrl });
-        await updateProjectEpisode(db, {
-          projectUuid,
-          episodeNo: ep.episode_no,
-          status: 'completed',
-          runId,
-          giggleProjectId,
-          exportUrl,
-          coverUrl,
-        });
-        pipelineEmit('system', 'SYSTEM', `[Phase2] EP${ep.episode_no} 完成，可进入发布阶段`, 'system');
-      } catch (e) {
-        await finishRun(db, { runId, status: 'failed', exportUrl: '' });
-        await updateProjectEpisode(db, {
-          projectUuid,
-          episodeNo: ep.episode_no,
-          status: 'failed',
-          runId,
-        });
-        pipelineEmit('system', 'SYSTEM', `[Phase2] EP${ep.episode_no} 失败: ${e.message}`, 'system');
-      }
-    }
-
-    const finalEpisodes = await listProjectEpisodesByUuid(db, projectUuid);
-    const hasFailed = finalEpisodes.some((ep) => ep.status === 'failed' || ep.status === 'partial_failed');
-    const hasPending = finalEpisodes.some((ep) => ep.giggle_project_id && !(ep.status === 'completed' && ep.export_url));
-
-    await setStoryProjectStatus(db, {
-      projectUuid,
-      status: hasPending ? 'partial_failed' : (hasFailed ? 'partial_failed' : 'completed'),
-    });
-    await finishRun(db, { runId: pipelineRunId, status: 'completed', exportUrl: '' });
-    pipelineEmit('system', 'SYSTEM', hasPending
-      ? '[Phase2] 部分剧集未成功完成，请检查失败集后重试'
-      : '[Phase2] 全部视频制作完成，等待手动发布', 'system');
-
-    return { pipelineRunId, episodeCount: pendingEpisodes.length };
-}
-
 // 防重入：同一项目同时只允许一个 pipeline 在跑
 const _autoRunSet = new Set();
-
-app.post('/api/agent/projects/:projectUuid/start-phase2', async (req, res) => {
-  const { projectUuid } = req.params;
-  try {
-    if (_autoRunSet.has(projectUuid)) {
-      return res.json({ ok: true, data: { projectUuid, status: 'already_running' } });
-    }
-    const project = await getStoryProject(db, projectUuid);
-    if (!project) return res.status(404).json({ ok: false, error: 'project not found' });
-
-    const episodes = await listProjectEpisodesByUuid(db, projectUuid);
-    const phase2Ready = episodes.filter((ep) => ep.giggle_project_id && !(ep.status === 'completed' && ep.export_url));
-    if (!phase2Ready.length) {
-      return res.status(400).json({ ok: false, error: '没有可继续的视频制作剧集，请先完成前半程迁移' });
-    }
-
-    res.json({
-      ok: true,
-      data: {
-        projectUuid,
-        status: 'phase2_started',
-        episodeCount: phase2Ready.length,
-      },
-    });
-
-    _autoRunSet.add(projectUuid);
-    runPhase2Only(projectUuid)
-      .catch((e) => console.error('[Phase2Only] failed:', e.message))
-      .finally(() => _autoRunSet.delete(projectUuid));
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
-  }
-});
 
 // HTTP 接口:触发全剧流水线(立即返回,后台异步执行)
 app.post('/api/agent/projects/:projectUuid/auto-run', async (req, res) => {
@@ -1615,7 +1187,6 @@ app.post('/api/agent/projects/:projectUuid/auto-run', async (req, res) => {
 // ── X2C 钉包余额查询 ──
 app.get('/api/x2c/balance', async (req, res) => {
   try {
-    await ensureX2CApiKeyLoaded();
     const data = await getWalletBalance();
     res.json({ ok: true, data });
   } catch (e) {
@@ -1646,7 +1217,6 @@ app.get('/api/x2c/dashboard/platform-breakdown', async (req, res) => {
 // ── X2C 钱包交易记录（收益/消费明细）──
 app.get('/api/x2c/wallet/transactions', async (req, res) => {
   try {
-    await ensureX2CApiKeyLoaded();
     const page = Number(req.query.page) || 1;
     const pageSize = Math.min(Number(req.query.pageSize) || 20, 100);
     const type = req.query.type || 'all'; // 'all' | 'earnings' | 'purchases'
@@ -1714,7 +1284,11 @@ app.post('/api/agent/projects/:projectUuid/episodes/:episodeNo/retry', async (re
         };
         emit('system', 'SYSTEM', `[Retry] EP${epNo} 开始重试`, 'system');
 
-    const giggle = await createGiggleClient();
+        const giggle = new GiggleClient({
+          baseUrl: GIGGLE_BASE_URL,
+          apiKey: process.env.GIGGLE_API_KEY,
+          authMode: process.env.GIGGLE_AUTH_MODE || 'x-auth',
+        });
         const agent = new DramaAgent({
           giggle,
           pollIntervalMs: Number(process.env.POLL_INTERVAL_MS || 5000),
@@ -1813,7 +1387,6 @@ app.post('/api/agent/projects/:projectUuid/publish-x2c', async (req, res) => {
     // 后台异步执行发布
     (async () => {
       try {
-        await ensureX2CApiKeyLoaded();
         emit('system', 'SYSTEM', `[X2C] 开始发布《${project.name}》，共 ${validEps.length} 集`, 'distribute');
         emit('agent-e', 'AGENT-E', '[X2C] 正在获取 S3 上传链接...', 'distribute');
 
@@ -1855,7 +1428,6 @@ app.get('/api/agent/projects/:projectUuid/video-stats', async (req, res) => {
     const project = await getStoryProject(db, projectUuid);
     if (!project) return res.status(404).json({ ok: false, error: 'project not found' });
     if (!project.x2c_project_id) return res.json({ ok: true, data: null, message: '项目尚未发布到 X2C' });
-    await ensureX2CApiKeyLoaded();
     const stats = await getVideoStats(project.x2c_project_id);
     res.json({ ok: true, data: stats[0] || null });
   } catch (e) {
@@ -1871,7 +1443,6 @@ async function syncX2cStatus() {
     if (!rows.length) return;
     for (const row of rows) {
       try {
-        await ensureX2CApiKeyLoaded();
         const res = await queryPublished(row.x2c_project_id);
         if (!res) continue;
         const remoteStatus = String(res.status || res.video_status || '').toLowerCase();
