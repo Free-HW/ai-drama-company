@@ -122,6 +122,19 @@ async function initSchema(db) {
       updated_at TEXT,
       UNIQUE(provider, user_id)
     );
+    CREATE TABLE IF NOT EXISTS workspace_migration_imports (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      workspace_item_id TEXT NOT NULL UNIQUE,
+      file_key TEXT DEFAULT "",
+      project_uuid TEXT DEFAULT "",
+      source_url TEXT DEFAULT "",
+      payload_sha256 TEXT DEFAULT "",
+      status TEXT NOT NULL DEFAULT "imported",
+      error_message TEXT DEFAULT "",
+      imported_at TEXT,
+      created_at TEXT,
+      updated_at TEXT
+    );
   `);
   // 迁移：已有安装的数据库补充新字段
   const cols = db.prepare("PRAGMA table_info(story_projects)").all().map(c => c.name);
@@ -347,6 +360,54 @@ async function getLatestServiceCredential(db, provider) {
   );
 }
 
+async function getWorkspaceMigrationImportByItemId(db, workspaceItemId) {
+  return get(
+    db,
+    `SELECT * FROM workspace_migration_imports WHERE workspace_item_id=? LIMIT 1`,
+    [String(workspaceItemId || '').trim()],
+  );
+}
+
+async function upsertWorkspaceMigrationImport(db, {
+  workspaceItemId,
+  fileKey,
+  projectUuid,
+  sourceUrl,
+  payloadSha256,
+  status,
+  errorMessage,
+  importedAt,
+}) {
+  const now = new Date().toISOString();
+  await run(
+    db,
+    `INSERT INTO workspace_migration_imports
+      (workspace_item_id,file_key,project_uuid,source_url,payload_sha256,status,error_message,imported_at,created_at,updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(workspace_item_id) DO UPDATE SET
+      file_key=excluded.file_key,
+      project_uuid=excluded.project_uuid,
+      source_url=excluded.source_url,
+      payload_sha256=excluded.payload_sha256,
+      status=excluded.status,
+      error_message=excluded.error_message,
+      imported_at=excluded.imported_at,
+      updated_at=excluded.updated_at`,
+    [
+      String(workspaceItemId || '').trim(),
+      String(fileKey || ''),
+      String(projectUuid || ''),
+      String(sourceUrl || ''),
+      String(payloadSha256 || ''),
+      String(status || 'imported'),
+      String(errorMessage || ''),
+      importedAt || now,
+      now,
+      now,
+    ],
+  );
+}
+
 
 module.exports = {
   DB_PATH, openDb, initSchema, createRun, setProjectId, saveScript,
@@ -358,4 +419,5 @@ module.exports = {
   listProjectCharacters, upsertCharacterMapping, listCharacterMappings,
   getGlobalCharacterByName, saveGlobalCharacter,
   upsertServiceCredential, getServiceCredential, getLatestServiceCredential,
+  getWorkspaceMigrationImportByItemId, upsertWorkspaceMigrationImport,
 };

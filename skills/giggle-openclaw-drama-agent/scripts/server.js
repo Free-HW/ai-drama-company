@@ -1,8 +1,9 @@
 ﻿const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '..', '..', '.env') });
+const fs = require('fs');
 const express = require('express');
 const cors = require('cors');
-const { randomUUID } = require('crypto');
+const { randomUUID, createHash } = require('crypto');
 const { GiggleClient } = require('./giggleClient');
 const { DramaAgent } = require('./agent');
 const {
@@ -35,6 +36,8 @@ const {
   listCharacterMappings,
   upsertServiceCredential,
   getLatestServiceCredential,
+  getWorkspaceMigrationImportByItemId,
+  upsertWorkspaceMigrationImport,
 } = require('./db');
 const { publishToX2C, publishToX2CWithProgress, getWalletBalance, getWalletTransactions, listPublished, queryPublished, getVideoStats } = require('./x2cPublish');
 
@@ -46,6 +49,9 @@ app.use(express.static(path.join(__dirname, '..', 'assets')));
 
 const X2C_API_ENDPOINT = 'https://eumfmgwxwjyagsvqloac.supabase.co/functions/v1/open-api';
 const DOT_ENV_PATH = path.join(__dirname, '..', '..', '..', '.env');
+const WORKSPACE_AUTH_FALLBACK_PATH = path.join(__dirname, '..', '.auth');
+const WORKSPACE_MIGRATION_TAG = 'drama-agent-migration';
+const WORKSPACE_MIGRATION_TITLE = 'AI Drama Company migration package';
 
 // 动态重读 .env，解决「写入 .env 后不重启服务就生效」的问题
 function reloadEnv() {
@@ -141,6 +147,113 @@ function normalizeImportedProjectStatus(episodes) {
 function deriveCoverUrlFromExportUrl(exportUrl) {
   const thumbMatch = String(exportUrl || '').match(/(https:\/\/assets\.giggle\.pro\/public\/ai_director\/[^\/]+\/[^.?]+)\.mp4/);
   return thumbMatch ? `${thumbMatch[1]}.thumb.jpg` : '';
+}
+
+function buildPayloadSha256(input) {
+  return createHash('sha256').update(JSON.stringify(input || {})).digest('hex');
+}
+
+function readWorkspaceAuthToken() {
+  const directToken = String(process.env.STORYCLAW_WORKSPACE_AUTH_TOKEN || '').trim();
+  if (directToken) return directToken;
+
+  const authPath = String(process.env.STORYCLAW_WORKSPACE_AUTH_PATH || '').trim() || WORKSPACE_AUTH_FALLBACK_PATH;
+  try {
+    if (fs.existsSync(authPath)) {
+      const token = fs.readFileSync(authPath, 'utf8').trim();
+      if (token) return token;
+    }
+  } catch (error) {
+    console.warn('[workspace-sync] failed to read auth token:', error.message);
+  }
+  return '';
+}
+
+function workspaceBaseUrl() {
+  return String(process.env.STORYCLAW_WORKSPACE_BASE_URL || 'https://storyclaw.com').replace(/\/+$/, '');
+}
+
+async function workspaceRequest(method, requestPath, { jsonBody, timeoutMs = 60000 } = {}) {
+  const token = readWorkspaceAuthToken();
+  if (!token) {
+    throw new Error('workspace auth token not configured');
+  }
+
+  const headers = {
+    authorization: `Bearer ${token}`,
+    accept: 'application/json',
+    'user-agent': 'ai-drama-company/1.0 workspace-sync',
+  };
+  const init = {
+    method,
+    headers,
+    signal: AbortSignal.timeout(timeoutMs),
+  };
+
+  if (jsonBody !== undefined) {
+    headers['content-type'] = 'application/json';
+    init.body = JSON.stringify(jsonBody);
+  }
+
+  const response = await fetch(`${workspaceBaseUrl()}${requestPath}`, init);
+  const text = await response.text();
+  let parsed = {};
+  if (text) {
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      throw new Error(`${method} ${requestPath} returned non-JSON response`);
+    }
+  }
+  if (!response.ok) {
+    throw new Error(parsed?.error || `${method} ${requestPath} failed with ${response.status}`);
+  }
+  return parsed;
+}
+
+function isMigrationWorkspaceItem(item) {
+  const tags = Array.isArray(item?.tags) ? item.tags : [];
+  return Boolean(
+    item &&
+    item.kind === 'artifact' &&
+    item.hasFile &&
+    (tags.includes(WORKSPACE_MIGRATION_TAG) || String(item.title || '') === WORKSPACE_MIGRATION_TITLE),
+  );
+}
+
+async function listPendingWorkspaceMigrationItems() {
+  const limit = Math.max(1, Math.min(50, Number(process.env.STORYCLAW_WORKSPACE_SYNC_LIMIT || 20)));
+  const result = await workspaceRequest('GET', `/api/workspace/items?kind=artifact&limit=${limit}&tags=${encodeURIComponent(WORKSPACE_MIGRATION_TAG)}`);
+  const items = Array.isArray(result?.items) ? result.items : [];
+  const pending = [];
+  for (const item of items) {
+    if (!isMigrationWorkspaceItem(item)) continue;
+    const existing = await getWorkspaceMigrationImportByItemId(db, item.id);
+    if (existing?.status === 'imported') continue;
+    pending.push(item);
+  }
+  pending.sort((left, right) => String(left.createdAt || '').localeCompare(String(right.createdAt || '')));
+  return pending;
+}
+
+async function fetchWorkspaceMigrationPayload(item) {
+  const urlResult = await workspaceRequest('GET', `/api/workspace/items/${item.id}/view-url?download=1`);
+  const downloadUrl = String(urlResult?.url || '');
+  if (!downloadUrl) {
+    throw new Error(`workspace item ${item.id} has no download url`);
+  }
+
+  const response = await fetch(downloadUrl, {
+    headers: { 'user-agent': 'ai-drama-company/1.0 workspace-sync' },
+    signal: AbortSignal.timeout(120000),
+  });
+  if (!response.ok) {
+    throw new Error(`failed to download migration payload (${response.status})`);
+  }
+  return {
+    payload: await response.json(),
+    sourceUrl: downloadUrl,
+  };
 }
 
 const db = openDb();
@@ -560,215 +673,236 @@ app.get('/api/agent/projects', async (req, res) => {
   }
 });
 
+async function importProjectPayload(payload, options = {}) {
+  const projectInput = asObject(payload.project);
+  const credentialsInput = asObject(payload.credentials);
+  const episodesInput = Array.isArray(payload.episodes) ? payload.episodes : [];
+  const charactersInput = Array.isArray(payload.characters) ? payload.characters : [];
+  const logsInput = Array.isArray(payload.logs) ? payload.logs : [];
+
+  const projectUuid = String(projectInput.projectUuid || payload.agentProjectUuid || randomUUID());
+  const title = String(projectInput.title || '').trim();
+  const idea = String(projectInput.idea || '').trim();
+
+  if (!title) {
+    throw new Error('project.title is required');
+  }
+  if (!episodesInput.length) {
+    throw new Error('episodes are required');
+  }
+
+  const importRunId = randomUUID();
+  const now = new Date().toISOString();
+  const existingProject = await getStoryProject(db, projectUuid);
+  const normalizedEmail = String(credentialsInput.email || payload.user?.email || '').trim().toLowerCase();
+
+  if (credentialsInput.giggleApiKey) {
+    await upsertServiceCredential(db, {
+      provider: 'giggle',
+      userId: String(payload.user?.userId || ''),
+      email: normalizedEmail,
+      apiKey: String(credentialsInput.giggleApiKey),
+      metadata: {
+        keyId: credentialsInput.giggleKeyId || null,
+        keyName: credentialsInput.giggleKeyName || '',
+        syncedAt: credentialsInput.syncedAt || now,
+      },
+    });
+    process.env.GIGGLE_API_KEY = String(credentialsInput.giggleApiKey);
+  }
+
+  if (credentialsInput.x2cApiKey) {
+    await upsertServiceCredential(db, {
+      provider: 'x2c',
+      userId: String(payload.user?.userId || ''),
+      email: normalizedEmail,
+      apiKey: String(credentialsInput.x2cApiKey),
+      metadata: {
+        x2cUserId: credentialsInput.x2cUserId || null,
+        syncedAt: credentialsInput.syncedAt || now,
+      },
+    });
+    process.env.X2C_API_KEY = String(credentialsInput.x2cApiKey);
+  }
+
+  if (!existingProject) {
+    await createStoryProject(db, {
+      projectUuid,
+      name: title,
+      idea,
+      language: projectInput.language || projectInput.locale || 'zh-CN',
+      aspect: projectInput.aspect || '9:16',
+      style: projectInput.styleName || '',
+      episodeCount: Number(projectInput.episodeCount || episodesInput.length || 1),
+      styleId: Number(projectInput.styleId || 146),
+      videoDuration: Number(projectInput.durationSeconds || 60),
+    });
+  }
+
+  db.prepare(
+    `UPDATE story_projects
+     SET name=?, idea=?, language=?, aspect=?, style=?, episode_count=?, style_id=?, video_duration=?, cover_url=?, script_run_id=?, updated_at=?
+     WHERE project_uuid=?`,
+  ).run(
+    title,
+    idea,
+    projectInput.language || projectInput.locale || 'zh-CN',
+    projectInput.aspect || '9:16',
+    projectInput.styleName || '',
+    Number(projectInput.episodeCount || episodesInput.length || 1),
+    Number(projectInput.styleId || 146),
+    Number(projectInput.durationSeconds || 60),
+    projectInput.coverUrl || '',
+    importRunId,
+    now,
+    projectUuid,
+  );
+
+  await upsertProjectBible(db, {
+    projectUuid,
+    worldSetting: '',
+    tone: '',
+    styleRules: projectInput.styleReason || '',
+    relationshipNotes: '',
+    rawJson: {
+      source: payload.source || 'storyclaw-website',
+      schemaVersion: payload.schemaVersion || 1,
+      websiteProjectId: payload.websiteProjectId || '',
+      user: asObject(payload.user),
+      importedAt: now,
+      logs: logsInput,
+      workspaceSync: asObject(options.workspaceSync),
+    },
+  });
+
+  const normalizedEpisodes = episodesInput.map((episode) => ({
+    episode_no: Number(episode.episodeNo || 0),
+    title: String(episode.title || '').trim(),
+    outline: String(episode.outline || '').trim(),
+    script_text: String(episode.scriptText || '').trim(),
+    status: normalizeImportedEpisodeStatus(episode),
+  })).filter((episode) => episode.episode_no > 0);
+
+  await replaceProjectEpisodes(db, {
+    projectUuid,
+    episodes: normalizedEpisodes,
+  });
+
+  for (const episode of episodesInput) {
+    const episodeNo = Number(episode.episodeNo || 0);
+    if (!episodeNo) continue;
+    db.prepare(
+      `UPDATE project_episodes
+       SET giggle_project_id=?, cover_url=?, export_url=?, updated_at=?
+       WHERE project_uuid=? AND episode_no=?`,
+    ).run(
+      episode.giggleProjectId || '',
+      episode.coverUrl || '',
+      episode.exportUrl || '',
+      now,
+      projectUuid,
+      episodeNo,
+    );
+  }
+
+  db.prepare('DELETE FROM character_mappings WHERE project_uuid=?').run(projectUuid);
+  db.prepare('DELETE FROM project_characters WHERE project_uuid=?').run(projectUuid);
+
+  for (const character of charactersInput) {
+    const characterKey = String(character.characterKey || '').trim();
+    if (!characterKey) continue;
+
+    await upsertProjectCharacter(db, {
+      projectUuid,
+      characterKey,
+      name: character.name || characterKey,
+      gender: character.gender || '',
+      persona: character.persona || '',
+      visualPrompt: buildVisualPrompt(character.roleLabel || '', character.persona || ''),
+      voicePref: '',
+    });
+
+    if (character.giggleCharacterId || character.giggleAssetId || character.imageUrl) {
+      await upsertCharacterMapping(db, {
+        projectUuid,
+        projectCharacterKey: characterKey,
+        giggleCharacterId: character.giggleCharacterId || '',
+        giggleAssetId: character.giggleAssetId || '',
+        rawJson: {
+          ...(asObject(character.rawJson)),
+          image_url: character.imageUrl || '',
+          image_signed_url: character.imageUrl || '',
+          name: character.name || characterKey,
+          gender: character.gender || '',
+          role_label: character.roleLabel || '',
+          persona: character.persona || '',
+        },
+      });
+    }
+  }
+
+  await createRun(db, {
+    runId: importRunId,
+    idea,
+    projectName: `${title} · imported`,
+  });
+  await setProjectId(db, { runId: importRunId, projectId: projectUuid });
+  await addLog(db, {
+    runId: importRunId,
+    stage: 'system',
+    tagClass: 'system',
+    tagText: 'SYSTEM',
+    payload: `[Import] 从 StoryClaw 导入项目前半程数据，项目 ${title}`,
+  });
+  await addLog(db, {
+    runId: importRunId,
+    stage: 'system',
+    tagClass: 'system',
+    tagText: 'SYSTEM',
+    payload: `[Import] 导入 ${normalizedEpisodes.length} 集剧本，${charactersInput.length} 个角色，凭证：Giggle=${credentialsInput.giggleApiKey ? 'yes' : 'no'}，X2C=${credentialsInput.x2cApiKey ? 'yes' : 'no'}`,
+  });
+  if (options.workspaceSync?.workspaceItemId) {
+    await addLog(db, {
+      runId: importRunId,
+      stage: 'system',
+      tagClass: 'system',
+      tagText: 'SYSTEM',
+      payload: `[Import] workspace 迁移文件已同步：${options.workspaceSync.workspaceItemId}`,
+    });
+  }
+  await finishRun(db, { runId: importRunId, status: 'completed', exportUrl: '' });
+
+  const importedStatus = normalizeImportedProjectStatus(episodesInput);
+  await setStoryProjectStatus(db, { projectUuid, status: importedStatus });
+
+  const project = await getStoryProject(db, projectUuid);
+  const episodes = await listProjectEpisodesByUuid(db, projectUuid);
+  const characters = await listProjectCharacters(db, projectUuid);
+
+  return {
+    projectUuid,
+    importRunId,
+    status: importedStatus,
+    project,
+    episodes,
+    characters,
+  };
+}
+
 app.post('/api/agent/import-project', async (req, res) => {
   try {
     const payload = asObject(req.body);
-    const projectInput = asObject(payload.project);
-    const credentialsInput = asObject(payload.credentials);
-    const episodesInput = Array.isArray(payload.episodes) ? payload.episodes : [];
-    const charactersInput = Array.isArray(payload.characters) ? payload.characters : [];
-    const logsInput = Array.isArray(payload.logs) ? payload.logs : [];
+    const data = await importProjectPayload(payload);
+    res.json({ ok: true, data });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
 
-    const projectUuid = String(projectInput.projectUuid || payload.agentProjectUuid || randomUUID());
-    const title = String(projectInput.title || '').trim();
-    const idea = String(projectInput.idea || '').trim();
-
-    if (!title) {
-      return res.status(400).json({ ok: false, error: 'project.title is required' });
-    }
-    if (!episodesInput.length) {
-      return res.status(400).json({ ok: false, error: 'episodes are required' });
-    }
-
-    const importRunId = randomUUID();
-    const now = new Date().toISOString();
-    const existingProject = await getStoryProject(db, projectUuid);
-    const normalizedEmail = String(credentialsInput.email || payload.user?.email || '').trim().toLowerCase();
-
-    if (credentialsInput.giggleApiKey) {
-      await upsertServiceCredential(db, {
-        provider: 'giggle',
-        userId: String(payload.user?.userId || ''),
-        email: normalizedEmail,
-        apiKey: String(credentialsInput.giggleApiKey),
-        metadata: {
-          keyId: credentialsInput.giggleKeyId || null,
-          keyName: credentialsInput.giggleKeyName || '',
-          syncedAt: credentialsInput.syncedAt || now,
-        },
-      });
-      process.env.GIGGLE_API_KEY = String(credentialsInput.giggleApiKey);
-    }
-
-    if (credentialsInput.x2cApiKey) {
-      await upsertServiceCredential(db, {
-        provider: 'x2c',
-        userId: String(payload.user?.userId || ''),
-        email: normalizedEmail,
-        apiKey: String(credentialsInput.x2cApiKey),
-        metadata: {
-          x2cUserId: credentialsInput.x2cUserId || null,
-          syncedAt: credentialsInput.syncedAt || now,
-        },
-      });
-      process.env.X2C_API_KEY = String(credentialsInput.x2cApiKey);
-    }
-
-    if (!existingProject) {
-      await createStoryProject(db, {
-        projectUuid,
-        name: title,
-        idea,
-        language: projectInput.language || projectInput.locale || 'zh-CN',
-        aspect: projectInput.aspect || '9:16',
-        style: projectInput.styleName || '',
-        episodeCount: Number(projectInput.episodeCount || episodesInput.length || 1),
-        styleId: Number(projectInput.styleId || 146),
-        videoDuration: Number(projectInput.durationSeconds || 60),
-      });
-    }
-
-    db.prepare(
-      `UPDATE story_projects
-       SET name=?, idea=?, language=?, aspect=?, style=?, episode_count=?, style_id=?, video_duration=?, cover_url=?, script_run_id=?, updated_at=?
-       WHERE project_uuid=?`,
-    ).run(
-      title,
-      idea,
-      projectInput.language || projectInput.locale || 'zh-CN',
-      projectInput.aspect || '9:16',
-      projectInput.styleName || '',
-      Number(projectInput.episodeCount || episodesInput.length || 1),
-      Number(projectInput.styleId || 146),
-      Number(projectInput.durationSeconds || 60),
-      projectInput.coverUrl || '',
-      importRunId,
-      now,
-      projectUuid,
-    );
-
-    await upsertProjectBible(db, {
-      projectUuid,
-      worldSetting: '',
-      tone: '',
-      styleRules: projectInput.styleReason || '',
-      relationshipNotes: '',
-      rawJson: {
-        source: payload.source || 'storyclaw-website',
-        schemaVersion: payload.schemaVersion || 1,
-        websiteProjectId: payload.websiteProjectId || '',
-        user: asObject(payload.user),
-        importedAt: now,
-        logs: logsInput,
-      },
-    });
-
-    const normalizedEpisodes = episodesInput.map((episode) => ({
-      episode_no: Number(episode.episodeNo || 0),
-      title: String(episode.title || '').trim(),
-      outline: String(episode.outline || '').trim(),
-      script_text: String(episode.scriptText || '').trim(),
-      status: normalizeImportedEpisodeStatus(episode),
-    })).filter((episode) => episode.episode_no > 0);
-
-    await replaceProjectEpisodes(db, {
-      projectUuid,
-      episodes: normalizedEpisodes,
-    });
-
-    for (const episode of episodesInput) {
-      const episodeNo = Number(episode.episodeNo || 0);
-      if (!episodeNo) continue;
-      db.prepare(
-        `UPDATE project_episodes
-         SET giggle_project_id=?, cover_url=?, export_url=?, updated_at=?
-         WHERE project_uuid=? AND episode_no=?`,
-      ).run(
-        episode.giggleProjectId || '',
-        episode.coverUrl || '',
-        episode.exportUrl || '',
-        now,
-        projectUuid,
-        episodeNo,
-      );
-    }
-
-    db.prepare('DELETE FROM character_mappings WHERE project_uuid=?').run(projectUuid);
-    db.prepare('DELETE FROM project_characters WHERE project_uuid=?').run(projectUuid);
-
-    for (const character of charactersInput) {
-      const characterKey = String(character.characterKey || '').trim();
-      if (!characterKey) continue;
-
-      await upsertProjectCharacter(db, {
-        projectUuid,
-        characterKey,
-        name: character.name || characterKey,
-        gender: character.gender || '',
-        persona: character.persona || '',
-        visualPrompt: buildVisualPrompt(character.roleLabel || '', character.persona || ''),
-        voicePref: '',
-      });
-
-      if (character.giggleCharacterId || character.giggleAssetId || character.imageUrl) {
-        await upsertCharacterMapping(db, {
-          projectUuid,
-          projectCharacterKey: characterKey,
-          giggleCharacterId: character.giggleCharacterId || '',
-          giggleAssetId: character.giggleAssetId || '',
-          rawJson: {
-            ...(asObject(character.rawJson)),
-            image_url: character.imageUrl || '',
-            image_signed_url: character.imageUrl || '',
-            name: character.name || characterKey,
-            gender: character.gender || '',
-            role_label: character.roleLabel || '',
-            persona: character.persona || '',
-          },
-        });
-      }
-    }
-
-    await createRun(db, {
-      runId: importRunId,
-      idea,
-      projectName: `${title} · imported`,
-    });
-    await setProjectId(db, { runId: importRunId, projectId: projectUuid });
-    await addLog(db, {
-      runId: importRunId,
-      stage: 'system',
-      tagClass: 'system',
-      tagText: 'SYSTEM',
-      payload: `[Import] 从 StoryClaw 导入项目前半程数据，项目 ${title}`,
-    });
-    await addLog(db, {
-      runId: importRunId,
-      stage: 'system',
-      tagClass: 'system',
-      tagText: 'SYSTEM',
-      payload: `[Import] 导入 ${normalizedEpisodes.length} 集剧本，${charactersInput.length} 个角色，凭证：Giggle=${credentialsInput.giggleApiKey ? 'yes' : 'no'}，X2C=${credentialsInput.x2cApiKey ? 'yes' : 'no'}`,
-    });
-    await finishRun(db, { runId: importRunId, status: 'completed', exportUrl: '' });
-
-    const importedStatus = normalizeImportedProjectStatus(episodesInput);
-    await setStoryProjectStatus(db, { projectUuid, status: importedStatus });
-
-    const project = await getStoryProject(db, projectUuid);
-    const episodes = await listProjectEpisodesByUuid(db, projectUuid);
-    const characters = await listProjectCharacters(db, projectUuid);
-
-    res.json({
-      ok: true,
-      data: {
-        projectUuid,
-        importRunId,
-        status: importedStatus,
-        project,
-        episodes,
-        characters,
-      },
-    });
+app.post('/api/agent/workspace-sync', async (req, res) => {
+  try {
+    await syncWorkspaceMigrationArtifactsOnStartup();
+    res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
@@ -1119,10 +1253,62 @@ function triggerScriptGeneration(projectUuid, idea, episodeCount, existingRunId)
   });
 }
 
+async function syncWorkspaceMigrationArtifactsOnStartup() {
+  const token = readWorkspaceAuthToken();
+  if (!token) {
+    console.log('[workspace-sync] skipped: no workspace auth token configured');
+    return;
+  }
+
+  const items = await listPendingWorkspaceMigrationItems();
+  if (!items.length) {
+    console.log('[workspace-sync] no pending migration artifacts found');
+    return;
+  }
+
+  for (const item of items) {
+    try {
+      const { payload, sourceUrl } = await fetchWorkspaceMigrationPayload(item);
+      const data = await importProjectPayload(asObject(payload), {
+        workspaceSync: {
+          workspaceItemId: item.id,
+          fileKey: item.fileKey || '',
+          createdAt: item.createdAt || '',
+        },
+      });
+
+      await upsertWorkspaceMigrationImport(db, {
+        workspaceItemId: item.id,
+        fileKey: item.fileKey || '',
+        projectUuid: data.projectUuid,
+        sourceUrl,
+        payloadSha256: buildPayloadSha256(payload),
+        status: 'imported',
+        errorMessage: '',
+        importedAt: new Date().toISOString(),
+      });
+      console.log(`[workspace-sync] imported migration artifact ${item.id} -> ${data.projectUuid}`);
+    } catch (error) {
+      await upsertWorkspaceMigrationImport(db, {
+        workspaceItemId: item.id,
+        fileKey: item.fileKey || '',
+        projectUuid: '',
+        sourceUrl: '',
+        payloadSha256: '',
+        status: 'failed',
+        errorMessage: error.message || 'workspace sync failed',
+        importedAt: new Date().toISOString(),
+      });
+      console.warn(`[workspace-sync] failed to import ${item.id}: ${error.message}`);
+    }
+  }
+}
+
 // ── 启动时恢复 generating / running 状态的项目 ──
 (async () => {
   await new Promise(r => setTimeout(r, 15000));
   try {
+    await syncWorkspaceMigrationArtifactsOnStartup();
     const stalled = await listStoryProjects(db, 50);
     for (const p of stalled) {
       if (!p.status) continue;
