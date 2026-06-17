@@ -1059,8 +1059,9 @@
           const json = await resp.json();
           const eps = json.data?.episodes || [];
           const pStatus = json.data?.project?.status || '';
-          // 有集在 running/phase1_done 或项目在 running/generating 状态,启动全剧流水线轮询
-          const hasActive = eps.some(e => ['running','phase1_done'].includes(e.status) && e.run_id);
+          // 有集在 running 或项目在 running/generating 状态，启动全剧流水线轮询
+          // 注意：phase1_done 是「等待用户点击开始制作」的静止状态，不能触发自动恢复
+          const hasActive = eps.some(e => e.status === 'running' && e.run_id);
           const isActive = hasActive || pStatus === 'running' || pStatus === 'generating' || pStatus.startsWith('generating:');
           if (isActive) {
             selectedStoryProjectUuid = p.project_uuid;
