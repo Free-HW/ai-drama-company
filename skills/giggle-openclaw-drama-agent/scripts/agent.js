@@ -497,10 +497,12 @@ class DramaAgent {
       return await this.runPhase2(input, emit, { projectId: giggleProjectId, steps: [] });
     }
 
-    // shot 列表为空 → Phase1 已失败/未完成，完整重跑
-    emit('agent-a', 'AGENT-A', '[Retry] 无分镜数据，完整重跑 Phase1+Phase2', 'script');
-    const phase1 = await this.runPhase1(input, emit);
-    return await this.runPhase2(input, emit, phase1);
+    // shot 列表为空 → Giggle 上没有分镜数据
+    // 注意：已有 giggleProjectId 时，绝对不能重跑 Phase1！
+    // Phase1 会在 Giggle 重新建项目，消耗积分。
+    // 可能的原因：分镜尚未生成完成，直接从 Phase2 头部重跑。
+    emit('agent-c', 'AGENT-C', `[Retry] 无分镜数据，但已有 giggleProjectId=${giggleProjectId}，尝试重跑 Phase2（分镜生成+视频+导出）`, 'storyboard');
+    return await this.runPhase2(input, emit, { projectId: giggleProjectId, steps: [] });
   }
 
   // 仅重新导出（视频全部完成的场景）

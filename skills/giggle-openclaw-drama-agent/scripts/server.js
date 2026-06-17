@@ -1348,16 +1348,39 @@ async function syncWorkspaceMigrationArtifactsOnStartup() {
           await setStoryProjectStatus(db, { projectUuid: p.project_uuid, status: hasAnyFailed ? 'failed' : 'completed' });
           continue;
         }
-        // 将 running 状态的集重置为 planned，避免 Phase1 重跑时被跳过
-        for (const ep of eps) {
-          if (ep.status === 'running') {
-            db.prepare('UPDATE project_episodes SET status=?,updated_at=? WHERE project_uuid=? AND episode_no=?')
-              .run('planned', new Date().toISOString(), p.project_uuid, ep.episode_no);
-            console.log(`[startup] reset EP${ep.episode_no} running->planned for ${p.project_uuid}`);
+
+        // 判断是否所有剧集都已完成 Phase1（有 giggle_project_id）
+        // 如果是，应调用 runPhase2Only，不能重跑 Phase1（否则会在 Giggle 重新建项目）
+        const pendingEps = eps.filter(e =>
+          e.status !== 'completed' && e.status !== 'failed' && e.status !== 'partial_failed'
+        );
+        const allPhase1Done = pendingEps.length > 0 && pendingEps.every(e => e.giggle_project_id);
+
+        if (allPhase1Done) {
+          // 所有未完成剧集均有 giggle_project_id，只需运行 Phase2
+          // 将 running 状态的剧集重置为 phase1_done，避免被跳过
+          for (const ep of pendingEps) {
+            if (ep.status === 'running') {
+              db.prepare('UPDATE project_episodes SET status=?,updated_at=? WHERE project_uuid=? AND episode_no=?')
+                .run('phase1_done', new Date().toISOString(), p.project_uuid, ep.episode_no);
+              console.log(`[startup] reset EP${ep.episode_no} running->phase1_done (has giggle_project_id) for ${p.project_uuid}`);
+            }
           }
+          console.log(`[startup] Phase1 already done, resuming Phase2 only for ${p.project_uuid}`);
+          runPhase2Only(p.project_uuid).catch(e => console.error('[startup] runPhase2Only failed:', e.message));
+        } else {
+          // 尚有剧集没有 giggle_project_id，属于 Phase1 未完成
+          // 将 running 状态的剧集重置为 planned，避免 Phase1 重跑时被跳过
+          for (const ep of eps) {
+            if (ep.status === 'running') {
+              db.prepare('UPDATE project_episodes SET status=?,updated_at=? WHERE project_uuid=? AND episode_no=?')
+                .run('planned', new Date().toISOString(), p.project_uuid, ep.episode_no);
+              console.log(`[startup] reset EP${ep.episode_no} running->planned for ${p.project_uuid}`);
+            }
+          }
+          console.log(`[startup] resuming full pipeline for running project ${p.project_uuid}`);
+          runAutoRun(p.project_uuid).catch(e => console.error('[startup] runAutoRun failed:', e.message));
         }
-        console.log(`[startup] resuming pipeline for running project ${p.project_uuid}`);
-        runAutoRun(p.project_uuid).catch(e => console.error('[startup] runAutoRun failed:', e.message));
         continue;
       }
     }
