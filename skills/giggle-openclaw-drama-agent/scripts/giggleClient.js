@@ -153,6 +153,11 @@ class GiggleClient {
   getImageModelList(scene = 'Video', modelType = 'Img2Img') {
     return this.request('GET', '/api/v1/payment/model-list', { query: { scene, model_type: modelType } });
   }
+
+  // 18. 获取用户信息（含积分余额）
+  getUserProfile() {
+    return this.request('GET', '/api/v1/user/profile');
+  }
 }
 
 async function poll({ fn, isDone, isFailed, intervalMs, timeoutMs, onTick }) {

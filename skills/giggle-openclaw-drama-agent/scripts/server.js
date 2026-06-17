@@ -1778,12 +1778,30 @@ app.post('/api/agent/projects/:projectUuid/start-phase2', async (req, res) => {
       return res.status(400).json({ ok: false, error: '没有可继续的视频制作剧集，请先完成前半程迁移' });
     }
 
+    // 查询 Giggle 积分余额（不阻断启动，仅将余额信息带回给前端）
+    let creditBalance = null;
+    let creditWarning = null;
+    try {
+      const giggle = await createGiggleClient();
+      const profile = await giggle.getUserProfile();
+      creditBalance = profile?.data?.current_credit_balance ?? null;
+      // 估算：每集平均 24 个镜头 × 假设每个镜头内容消耗 10 个积分，3 集约 720 个积分
+      const estimatedCost = phase2Ready.length * 240; // 24 shots * 10 credits * episodes
+      if (creditBalance !== null && creditBalance < estimatedCost) {
+        creditWarning = `积分可能不足：当前余额 ${creditBalance} 分，预估消耗 ${estimatedCost} 分（${phase2Ready.length} 集 × 24 镜头）。请前往 Giggle 平台充値后再制作。`;
+      }
+    } catch (_) {
+      // 积分查询失败不影响制作流程
+    }
+
     res.json({
       ok: true,
       data: {
         projectUuid,
         status: 'phase2_started',
         episodeCount: phase2Ready.length,
+        creditBalance,
+        creditWarning,
       },
     });
 
@@ -1815,6 +1833,19 @@ app.post('/api/agent/projects/:projectUuid/auto-run', async (req, res) => {
       .finally(() => _autoRunSet.delete(projectUuid));
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// ── Giggle 积分余额查询 ──
+app.get('/api/giggle/balance', async (req, res) => {
+  try {
+    const giggle = await createGiggleClient();
+    const profile = await giggle.getUserProfile();
+    const balance = profile?.data?.current_credit_balance ?? null;
+    const recharged = profile?.data?.recharged_credits ?? null;
+    res.json({ ok: true, data: { creditBalance: balance, rechargedCredits: recharged } });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message, data: { creditBalance: null } });
   }
 });
 

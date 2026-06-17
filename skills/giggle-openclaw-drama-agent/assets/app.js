@@ -788,7 +788,7 @@
     // 需求2+3：右上角发布按钮 - 全部视频完成且未发布时才可点击
     const centerHead = document.querySelector('.center-head');
     // 清除旧的动态按钮
-    ['manual-publish-btn', 'start-phase2-btn'].forEach(id => {
+    ['manual-publish-btn', 'start-phase2-btn', 'credit-warning-banner'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.remove();
     });
@@ -815,19 +815,84 @@
         makeBtn.title = isRunning ? '视频制作进行中' : '触发 Phase2：视频生成与发布流程';
         makeBtn.addEventListener('click', async () => {
           makeBtn.disabled = true;
-          makeBtn.textContent = '⏳ 启动中...';
+          makeBtn.textContent = '⏳ 检查积分...';
+          // 先运行预检（展示当前积分）
           try {
-            const r = await fetch(`/api/agent/projects/${projectUuid}/start-phase2`, { method: 'POST' });
-            const j = await r.json().catch(() => ({}));
-            if (!r.ok || !j.ok) throw new Error(j.error || '启动失败');
-            makeBtn.textContent = '⏳ 制作中...';
-            // 自动启动流水线轮询
-            pollPipeline(projectUuid);
-            await renderStoryEpisodes(projectUuid);
-          } catch (err) {
-            makeBtn.disabled = false;
-            makeBtn.textContent = '🎬 开始制作';
-            alert('启动制作失败：' + err.message);
+            const balResp = await fetch('/api/giggle/balance');
+            const balJson = await balResp.json().catch(() => ({}));
+            const balance = balJson.data?.creditBalance;
+            // 移除旧 banner
+            document.getElementById('credit-warning-banner')?.remove();
+            if (balance !== null && balance !== undefined) {
+              // 估算：每集 24 镜头 × 10 分（保守估算）
+              const epCount = eps.filter(ep => ep.giggle_project_id && !(ep.status === 'completed' && ep.export_url)).length;
+              const estimated = epCount * 240;
+              const isLow = balance < estimated;
+              const banner = document.createElement('div');
+              banner.id = 'credit-warning-banner';
+              banner.style.cssText = `
+                margin:8px 0 0;
+                padding:8px 14px;
+                font-size:12px;
+                font-family:var(--mono);
+                border-left:3px solid ${isLow ? '#e84040' : '#50c878'};
+                background:${isLow ? 'rgba(232,64,64,.08)' : 'rgba(80,200,120,.06)'};
+                color:${isLow ? '#e84040' : '#50c878'};
+                line-height:1.6;
+              `;
+              if (isLow) {
+                banner.innerHTML = `
+                  ⚠️ <b>Giggle 积分可能不足</b><br>
+                  当前余额: <b>${balance.toLocaleString()} 分</b> &nbsp;·;&nbsp; 预估消耗: <b>≥ ${estimated.toLocaleString()} 分</b>（${epCount} 集）<br>
+                  请先往 <a href="https://giggle.pro" target="_blank" style="color:inherit;text-decoration:underline;">giggle.pro</a> 充値后再制作，否则制作中断可能导致分镖失败。
+                `;
+              } else {
+                banner.innerHTML = `✓ Giggle 余额: <b>${balance.toLocaleString()} 分</b> &nbsp;·;&nbsp; 预估消耗: ~${estimated.toLocaleString()} 分，余额充足。`;
+              }
+              // 插入 banner——放在 centerHead 下方
+              const centerPanel = centerHead.closest('.center') || centerHead.parentElement;
+              if (centerPanel) {
+                const existBanner = document.getElementById('credit-warning-banner');
+                if (existBanner) existBanner.remove();
+                centerHead.insertAdjacentElement('afterend', banner);
+              }
+              if (isLow) {
+                // 积分不足时不预先启动，提示用户确认
+                makeBtn.disabled = false;
+                makeBtn.textContent = '🎬 强制开始制作';
+                makeBtn.style.cssText += 'border-color:rgba(232,64,64,.6);';
+                makeBtn.title = '积分不足，再次点击将强制开始（延迟延迟可能导致分镖失败）';
+                makeBtn._creditConfirmed = false;
+                makeBtn.addEventListener('click', async function onForceClick() {
+                  if (makeBtn._creditConfirmed) return; // 已在下面的正常流程里处理
+                  makeBtn._creditConfirmed = true;
+                  makeBtn.removeEventListener('click', onForceClick);
+                  await doStartPhase2();
+                }, { once: true });
+                return;
+              }
+            }
+          } catch (_) {
+            // 余额查询失败时直接继续制作
+          }
+          await doStartPhase2();
+
+          async function doStartPhase2() {
+            makeBtn.disabled = true;
+            makeBtn.textContent = '⏳ 启动中...';
+            try {
+              const r = await fetch(`/api/agent/projects/${projectUuid}/start-phase2`, { method: 'POST' });
+              const j = await r.json().catch(() => ({}));
+              if (!r.ok || !j.ok) throw new Error(j.error || '启动失败');
+              makeBtn.textContent = '⏳ 制作中...';
+              // 自动启动流水线轮询
+              pollPipeline(projectUuid);
+              await renderStoryEpisodes(projectUuid);
+            } catch (err) {
+              makeBtn.disabled = false;
+              makeBtn.textContent = '🎬 开始制作';
+              alert('启动制作失败：' + err.message);
+            }
           }
         });
         if (filterRow) centerHead.insertBefore(makeBtn, filterRow);
