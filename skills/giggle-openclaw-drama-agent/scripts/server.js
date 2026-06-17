@@ -180,22 +180,6 @@ function buildPayloadSha256(input) {
   return createHash('sha256').update(JSON.stringify(input || {})).digest('hex');
 }
 
-function readWorkspaceAuthToken() {
-  const directToken = String(process.env.STORYCLAW_WORKSPACE_AUTH_TOKEN || '').trim();
-  if (directToken) return directToken;
-
-  const authPath = String(process.env.STORYCLAW_WORKSPACE_AUTH_PATH || '').trim() || WORKSPACE_AUTH_FALLBACK_PATH;
-  try {
-    if (fs.existsSync(authPath)) {
-      const token = fs.readFileSync(authPath, 'utf8').trim();
-      if (token) return token;
-    }
-  } catch (error) {
-    console.warn('[workspace-sync] failed to read auth token:', error.message);
-  }
-  return '';
-}
-
 function workspaceBaseUrl() {
   return String(process.env.STORYCLAW_WORKSPACE_BASE_URL || 'https://storyclaw.com').replace(/\/+$/, '');
 }

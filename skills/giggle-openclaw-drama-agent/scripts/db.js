@@ -146,9 +146,18 @@ async function initSchema(db) {
   if (!epCols.includes('cover_url')) {
     db.exec('ALTER TABLE project_episodes ADD COLUMN cover_url TEXT DEFAULT ""');
   }
-  // 迁移：story_projects 补 cover_url
+  // 迁移：story_projects 补 cover_url / x2c 字段
   if (!cols.includes('cover_url')) {
     db.exec('ALTER TABLE story_projects ADD COLUMN cover_url TEXT DEFAULT ""');
+  }
+  if (!cols.includes('x2c_project_id')) {
+    db.exec('ALTER TABLE story_projects ADD COLUMN x2c_project_id TEXT DEFAULT ""');
+  }
+  if (!cols.includes('x2c_status')) {
+    db.exec('ALTER TABLE story_projects ADD COLUMN x2c_status TEXT DEFAULT ""');
+  }
+  if (!cols.includes('x2c_published_at')) {
+    db.exec('ALTER TABLE story_projects ADD COLUMN x2c_published_at TEXT DEFAULT ""');
   }
 }
 
