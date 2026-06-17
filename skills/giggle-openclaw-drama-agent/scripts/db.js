@@ -141,6 +141,15 @@ async function initSchema(db) {
   if (!cols.includes('x2c_views')) {
     db.exec('ALTER TABLE story_projects ADD COLUMN x2c_views INTEGER DEFAULT 0');
   }
+  // 迁移：project_episodes 补 cover_url
+  const epCols = db.prepare("PRAGMA table_info(project_episodes)").all().map(c => c.name);
+  if (!epCols.includes('cover_url')) {
+    db.exec('ALTER TABLE project_episodes ADD COLUMN cover_url TEXT DEFAULT ""');
+  }
+  // 迁移：story_projects 补 cover_url
+  if (!cols.includes('cover_url')) {
+    db.exec('ALTER TABLE story_projects ADD COLUMN cover_url TEXT DEFAULT ""');
+  }
 }
 
 async function createRun(db, { runId, idea, projectName }) {

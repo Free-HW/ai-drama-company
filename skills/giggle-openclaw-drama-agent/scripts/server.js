@@ -53,6 +53,33 @@ const WORKSPACE_AUTH_FALLBACK_PATH = path.join(__dirname, '..', '.auth');
 const WORKSPACE_MIGRATION_TAG = 'drama-agent-migration';
 const WORKSPACE_MIGRATION_TITLE = 'AI Drama Company migration package';
 
+// 读取 workspace auth token：优先读环境变量（外部开发兼容），其次读主 workspace 的 .auth 文件
+function readWorkspaceAuthToken() {
+  // 1. 环境变量（外部开发 / Codex 场景）
+  const directToken = String(process.env.STORYCLAW_WORKSPACE_AUTH_TOKEN || '').trim();
+  if (directToken) return directToken;
+  // 2. 主 workspace 的 .auth（OpenClaw 市场安装标准位置）
+  const mainWorkspaceAuth = path.join(
+    require('os').homedir(),
+    '.openclaw',
+    'workspace',
+    'skills',
+    'storyclaw-workspace-reporter',
+    '.auth',
+  );
+  if (fs.existsSync(mainWorkspaceAuth)) {
+    const token = fs.readFileSync(mainWorkspaceAuth, 'utf8').trim();
+    if (token) return token;
+  }
+  // 3. 本 agent workspace 的 .auth（备用）
+  const authPath = String(process.env.STORYCLAW_WORKSPACE_AUTH_PATH || '').trim() || WORKSPACE_AUTH_FALLBACK_PATH;
+  if (fs.existsSync(authPath)) {
+    const token = fs.readFileSync(authPath, 'utf8').trim();
+    if (token) return token;
+  }
+  return '';
+}
+
 // 动态重读 .env，解决「写入 .env 后不重启服务就生效」的问题
 function reloadEnv() {
   require('dotenv').config({ path: DOT_ENV_PATH, override: true });
