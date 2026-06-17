@@ -1763,6 +1763,15 @@ app.post('/api/agent/projects/:projectUuid/start-phase2', async (req, res) => {
     const project = await getStoryProject(db, projectUuid);
     if (!project) return res.status(404).json({ ok: false, error: 'project not found' });
 
+    // 预检证 Giggle API Key（市场用户和迁移用户都需要）
+    const giggleKey = await resolveServiceApiKey('giggle');
+    if (!giggleKey) {
+      return res.status(400).json({
+        ok: false,
+        error: 'GIGGLE_API_KEY 未配置。如果是市场安装用户，请在 .env 中设置 GIGGLE_API_KEY 并重启服务；如果是迁移导入项目，请重新触发工作区同步。',
+      });
+    }
+
     const episodes = await listProjectEpisodesByUuid(db, projectUuid);
     const phase2Ready = episodes.filter((ep) => ep.giggle_project_id && !(ep.status === 'completed' && ep.export_url));
     if (!phase2Ready.length) {

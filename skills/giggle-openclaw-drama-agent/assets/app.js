@@ -368,6 +368,7 @@
     if (p.status === 'completed') return 'COMPLETED';
     if (p.status === 'partial_failed' || p.status === 'failed') return 'FAILED';
     if (p.status === 'planned' || p.status === 'draft') return 'PLANNED';
+    if (p.status === 'ready_for_phase2') return '✦ 待制作';
     return 'RUNNING';
   }
 
@@ -786,30 +787,70 @@
     }
     // 需求2+3：右上角发布按钮 - 全部视频完成且未发布时才可点击
     const centerHead = document.querySelector('.center-head');
-    const existPublishBtn = document.getElementById('manual-publish-btn');
-    if (existPublishBtn) existPublishBtn.remove();
+    // 清除旧的动态按钮
+    ['manual-publish-btn', 'start-phase2-btn'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.remove();
+    });
     if (centerHead && eps.length > 0) {
       const proj = data.project || {};
+      const projStatus = proj.status || '';
       const allEpsDone = eps.every(ep => ep.status === 'completed' || ep.status === 'failed' || ep.status === 'partial_failed');
       const hasAnyVideo = eps.some(ep => ep.export_url);
       const alreadyPublished = !!proj.x2c_project_id;
       const x2cStatus = proj.x2c_status || '';
       const canPublish = allEpsDone && hasAnyVideo;
-      const publishBtnLabel = alreadyPublished
-        ? (x2cStatus === 'processing' ? '⏳ 审核中 X2C' : x2cStatus === 'approved' ? '✅ 已上线 X2C' : x2cStatus === 'rejected' ? '❌ 被拒绝 X2C' : '✅ 已发布 X2C')
-        : canPublish ? '📤 发布到 X2C' : '📤 发布到 X2C（制作完成后可用）';
-      const btn = document.createElement('button');
-      btn.id = 'manual-publish-btn';
-      btn.className = 'oclaw-btn';
-      btn.style.cssText = 'font-size:12px;padding:6px 14px;' + (canPublish && !alreadyPublished ? 'background:rgba(80,200,120,.18);border-color:rgba(80,200,120,.5);color:#50c878;' : alreadyPublished ? 'opacity:.7;cursor:not-allowed;background:rgba(255,200,50,.1);border-color:rgba(255,200,50,.4);color:var(--gold);' : 'opacity:.4;cursor:not-allowed;');
-      btn.textContent = publishBtnLabel;
-      btn.disabled = !canPublish || alreadyPublished;
-      btn.title = !canPublish ? '需要全部集制作完成（含有失败集时允许发布已完成集）' : alreadyPublished ? `已发布到 X2C · 状态: ${x2cStatus}` : '发布到 X2C 平台';
-      btn.addEventListener('click', () => manualPublishToX2C(projectUuid));
-      // 插到 filter-row 前面
+      const isPhase2Ready = projStatus === 'ready_for_phase2';
+      const isRunning = projStatus === 'running';
       const filterRow = centerHead.querySelector('.filter-row');
-      if (filterRow) centerHead.insertBefore(btn, filterRow);
-      else centerHead.appendChild(btn);
+
+      // ── 🎬 开始制作按钮（迁移项目 / ready_for_phase2 时显示）──
+      if (isPhase2Ready || (isRunning && eps.some(ep => ep.status === 'phase1_done'))) {
+        const makeBtn = document.createElement('button');
+        makeBtn.id = 'start-phase2-btn';
+        makeBtn.className = 'oclaw-btn';
+        makeBtn.style.cssText = 'font-size:12px;padding:6px 16px;background:rgba(232,179,57,.18);border-color:rgba(232,179,57,.6);color:var(--gold);font-weight:600;';
+        makeBtn.textContent = isRunning ? '⏳ 制作中...' : '🎬 开始制作';
+        makeBtn.disabled = isRunning;
+        makeBtn.title = isRunning ? '视频制作进行中' : '触发 Phase2：视频生成与发布流程';
+        makeBtn.addEventListener('click', async () => {
+          makeBtn.disabled = true;
+          makeBtn.textContent = '⏳ 启动中...';
+          try {
+            const r = await fetch(`/api/agent/projects/${projectUuid}/start-phase2`, { method: 'POST' });
+            const j = await r.json().catch(() => ({}));
+            if (!r.ok || !j.ok) throw new Error(j.error || '启动失败');
+            makeBtn.textContent = '⏳ 制作中...';
+            // 自动启动流水线轮询
+            pollPipeline(projectUuid);
+            await renderStoryEpisodes(projectUuid);
+          } catch (err) {
+            makeBtn.disabled = false;
+            makeBtn.textContent = '🎬 开始制作';
+            alert('启动制作失败：' + err.message);
+          }
+        });
+        if (filterRow) centerHead.insertBefore(makeBtn, filterRow);
+        else centerHead.appendChild(makeBtn);
+      }
+
+      // ── 📤 发布到 X2C 按钮 ──
+      const canShowPublish = canPublish || alreadyPublished;
+      if (canShowPublish) {
+        const publishBtnLabel = alreadyPublished
+          ? (x2cStatus === 'processing' ? '⏳ 审核中 X2C' : x2cStatus === 'approved' ? '✅ 已上线 X2C' : x2cStatus === 'rejected' ? '❌ 被拒绝 X2C' : '✅ 已发布 X2C')
+          : '📤 发布到 X2C';
+        const btn = document.createElement('button');
+        btn.id = 'manual-publish-btn';
+        btn.className = 'oclaw-btn';
+        btn.style.cssText = 'font-size:12px;padding:6px 14px;' + (canPublish && !alreadyPublished ? 'background:rgba(80,200,120,.18);border-color:rgba(80,200,120,.5);color:#50c878;' : alreadyPublished ? 'opacity:.7;cursor:not-allowed;background:rgba(255,200,50,.1);border-color:rgba(255,200,50,.4);color:var(--gold);' : 'opacity:.4;cursor:not-allowed;');
+        btn.textContent = publishBtnLabel;
+        btn.disabled = !canPublish || alreadyPublished;
+        btn.title = alreadyPublished ? `已发布到 X2C · 状态: ${x2cStatus}` : '发布到 X2C 平台';
+        btn.addEventListener('click', () => manualPublishToX2C(projectUuid));
+        if (filterRow) centerHead.insertBefore(btn, filterRow);
+        else centerHead.appendChild(btn);
+      }
     }
 
     const box = document.getElementById('oclawDb');
