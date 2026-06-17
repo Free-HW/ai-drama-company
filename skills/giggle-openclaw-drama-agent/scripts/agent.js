@@ -416,21 +416,21 @@ class DramaAgent {
     const exported = await poll({
       fn: () => this.giggle.getExportedAssets(projectId),
       isDone: (r) => {
-        const asset = (r.data || []).find((p) => p.project_id === projectId);
+        const asset = (r.data?.list || []).find((p) => p.project_id === projectId);
         return asset && (Number(asset.progress || 0) >= 100 || isDone(asset.project_status));
       },
       isFailed: (r) => {
-        const asset = (r.data || []).find((p) => p.project_id === projectId);
+        const asset = (r.data?.list || []).find((p) => p.project_id === projectId);
         return asset && isFailed(asset.project_status);
       },
       intervalMs: interval,
       timeoutMs: timeout,
       onTick: (r) => {
-        const asset = (r.data || []).find((p) => p.project_id === projectId);
+        const asset = (r.data?.list || []).find((p) => p.project_id === projectId);
         emit('agent-e', 'AGENT-E', `[DistributionAgent] 导出进度: ${asset?.progress || 0}%`, 'distribute');
       },
     });
-    const asset = (exported.data || []).find((p) => p.project_id === projectId) || {};
+    const asset = (exported.data?.list || []).find((p) => p.project_id === projectId) || {};
     out.export = {
       status: asset.project_status || 'completed',
       progress: asset.progress || 100,
@@ -473,11 +473,14 @@ class DramaAgent {
     emit('agent-c', 'AGENT-C', `[Retry] 检查 Giggle project ${giggleProjectId} 的分镜状态...`, 'storyboard');
     const shotsResp = await this.giggle.listShots(giggleProjectId);
     const allShots = shotsResp.data?.shot_list || [];
-    const hasVideoData = allShots.some(s => s.video_generating_status);
-    const hasFailedVideo = allShots.some(s => isFailed(s.video_generating_status));
-    const allVideoDone = allShots.length > 0 && allShots.every(s => isDone(s.video_generating_status));
+    // waiting = 提交了但 model 为空，不算真正「有视频数据」；completed/failed/pending/running 才算
+    const REAL_VIDEO_STATUSES = new Set(['completed', 'failed', 'pending', 'running']);
+    const hasRealVideoData = allShots.some(s => REAL_VIDEO_STATUSES.has(s.video_generating_status));
+    const hasWaitingShots  = allShots.some(s => s.video_generating_status === 'waiting');
+    const hasFailedVideo   = allShots.some(s => isFailed(s.video_generating_status));
+    const allVideoDone     = allShots.length > 0 && allShots.every(s => isDone(s.video_generating_status));
 
-    emit('agent-c', 'AGENT-C', `[Retry] shot总数=${allShots.length} hasVideoData=${hasVideoData} hasFailedVideo=${hasFailedVideo} allVideoDone=${allVideoDone}`, 'storyboard');
+    emit('agent-c', 'AGENT-C', `[Retry] shot总数=${allShots.length} hasRealVideoData=${hasRealVideoData} hasWaitingShots=${hasWaitingShots} hasFailedVideo=${hasFailedVideo} allVideoDone=${allVideoDone}`, 'storyboard');
 
     if (allVideoDone) {
       // 视频全部完成，只需重跑导出
@@ -485,7 +488,18 @@ class DramaAgent {
       return await this._runExportOnly(giggleProjectId, input, emit);
     }
 
-    if (hasFailedVideo || (hasVideoData && !allVideoDone)) {
+    if (hasWaitingShots && !hasRealVideoData) {
+      // 所有 shot 都是 waiting（model 为空，Giggle 不会执行）→ 重新提交视频生成
+      emit('agent-d', 'AGENT-D', '[Retry] 检测到 waiting 状态 shot（未生效），重新提交视频生成', 'render');
+      const waitingIds = allShots.filter(s => s.video_generating_status === 'waiting').map(s => Number(s.id));
+      await this.giggle.generateVideosForShots({
+        project_id: giggleProjectId, model: 'seedance-2.0-pro', second_model: 'seedance-2.0-pro',
+        shot_id: waitingIds,
+      });
+      return await this._runVideoRetryAndExport(giggleProjectId, allShots, input, emit);
+    }
+
+    if (hasFailedVideo || (hasRealVideoData && !allVideoDone)) {
       // 有视频失败或未完成 → 从视频重试+导出
       emit('agent-d', 'AGENT-D', '[Retry] 存在失败/未完成视频，从视频重试开始', 'render');
       return await this._runVideoRetryAndExport(giggleProjectId, allShots, input, emit);
@@ -514,20 +528,20 @@ class DramaAgent {
     const exported = await poll({
       fn: () => this.giggle.getExportedAssets(projectId),
       isDone: (r) => {
-        const asset = (r.data || []).find((p) => p.project_id === projectId);
+        const asset = (r.data?.list || []).find((p) => p.project_id === projectId);
         return asset && (Number(asset.progress || 0) >= 100 || isDone(asset.project_status));
       },
       isFailed: (r) => {
-        const asset = (r.data || []).find((p) => p.project_id === projectId);
+        const asset = (r.data?.list || []).find((p) => p.project_id === projectId);
         return asset && isFailed(asset.project_status);
       },
       intervalMs: interval, timeoutMs: timeout,
       onTick: (r) => {
-        const asset = (r.data || []).find((p) => p.project_id === projectId);
+        const asset = (r.data?.list || []).find((p) => p.project_id === projectId);
         emit('agent-e', 'AGENT-E', `[DistributionAgent] 导出进度: ${asset?.progress || 0}%`, 'distribute');
       },
     });
-    const asset = (exported.data || []).find((p) => p.project_id === projectId);
+    const asset = (exported.data?.list || []).find((p) => p.project_id === projectId);
     const videoUrl = asset?.video_download_url || asset?.video_signed_url || '';
     out.export = { videoDownloadUrl: videoUrl, videoSignedUrl: videoUrl };
     emit('agent-e', 'AGENT-E', `[完成] 视频已导出: ${videoUrl}`, 'distribute');
@@ -561,6 +575,15 @@ class DramaAgent {
     };
 
     let finalShots = initialShots;
+    // waiting 状态的 shot 是用空 model 提交的，Giggle 不会执行，需要先重新提交
+    const waitingShots = finalShots.filter(s => s.video_generating_status === 'waiting');
+    if (waitingShots.length > 0) {
+      emit('agent-d', 'AGENT-D', `[VideoAgent] 检测到 ${waitingShots.length} 个 waiting shot（未生效），重新提交`, 'render');
+      await this.giggle.generateVideosForShots({
+        project_id: projectId, model: 'seedance-2.0-pro', second_model: 'seedance-2.0-pro',
+        shot_id: waitingShots.map(s => Number(s.id)),
+      });
+    }
     // 确保初始状态全部到终态
     const allTerminal = finalShots.every(s => isDone(s.video_generating_status) || isFailed(s.video_generating_status));
     if (!allTerminal) {
