@@ -1767,9 +1767,43 @@ async function runPhase2Only(projectUuid) {
       status: hasPending ? 'partial_failed' : (hasFailed ? 'partial_failed' : 'completed'),
     });
     await finishRun(db, { runId: pipelineRunId, status: 'completed', exportUrl: '' });
-    pipelineEmit('system', 'SYSTEM', hasPending
-      ? '[Phase2] 部分剧集未成功完成，请检查失败集后重试'
-      : '[Phase2] 全部视频制作完成，等待手动发布', 'system');
+
+    if (!hasPending && !hasFailed) {
+      pipelineEmit('system', 'SYSTEM', '[Phase2] 全部视频制作完成，开始自动发布到 X2C...', 'system');
+      // ── X2C 自动发布（与 runAutoRun 保持一致）──
+      try {
+        const projectLatest = await getStoryProject(db, projectUuid);
+        if (!projectLatest?.x2c_project_id) {
+          await ensureX2CApiKeyLoaded();
+          const episodesForPublish = finalEpisodes
+            .filter(e => e.export_url && e.status === 'completed')
+            .sort((a, b) => a.episode_no - b.episode_no)
+            .map(e => ({
+              episode_no: e.episode_no,
+              export_url: e.export_url,
+              cover_url: e.cover_url || '',
+            }));
+          if (!episodesForPublish.length) throw new Error('没有可发布的视频');
+          const result = await publishToX2CWithProgress({
+            projectName: projectLatest.name,
+            idea: projectLatest.idea,
+            episodes: episodesForPublish,
+            onProgress: (tagClass, tagText, payload) =>
+              pipelineEmit(tagClass, tagText, payload, 'distribute'),
+          });
+          db.prepare('UPDATE story_projects SET x2c_project_id=?,x2c_status=?,x2c_published_at=?,updated_at=? WHERE project_uuid=?')
+            .run(result.x2cProjectId, result.status, new Date().toISOString(), new Date().toISOString(), projectUuid);
+          pipelineEmit('system', 'SYSTEM', `[X2C] 发布成功! 分类:${result.category},项目ID:${result.x2cProjectId},状态:${result.status}`, 'system');
+        } else {
+          pipelineEmit('system', 'SYSTEM', `[X2C] 已发布,跳过(x2c_project_id=${projectLatest.x2c_project_id})`, 'system');
+        }
+      } catch (e) {
+        pipelineEmit('system', 'SYSTEM', `[X2C] 发布失败(不影响制作结果):${e.message}`, 'system');
+        console.error('[X2C] publish error:', e.message);
+      }
+    } else {
+      pipelineEmit('system', 'SYSTEM', '[Phase2] 部分剧集未成功完成，请检查失败集后重试', 'system');
+    }
 
     return { pipelineRunId, episodeCount: pendingEpisodes.length };
 }
