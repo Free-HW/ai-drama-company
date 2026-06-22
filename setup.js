@@ -84,6 +84,26 @@ async function main() {
     const scKey      = await ask(rl, 'StoryClaw LLM API Key (用于AI命名)', '');
     const port       = await ask(rl, '服务端口', '3000');
 
+    // 自动查找 workspace auth token
+    let wsToken = '';
+    const wsAuthPaths = [
+      path.join(os.homedir(), '.openclaw', 'workspace', 'skills', 'storyclaw-workspace-reporter', '.auth'),
+    ];
+    for (const p of wsAuthPaths) {
+      if (fs.existsSync(p)) {
+        wsToken = fs.readFileSync(p, 'utf8').trim();
+        if (wsToken) { ok(`自动读取到 Workspace Auth Token（来自 ${p}）`); break; }
+      }
+    }
+    if (!wsToken) {
+      log(``);
+      log(`  ${YELLOW}【可选】StoryClaw Workspace Auth Token${RESET}`);
+      log(`  如果你想把已有剧本项目迁移到本 Agent，需要提供此 Token。`);
+      log(`  获取方式：登录 storyclaw.com → 右上角头像 → Settings → API Tokens → 复制 ws_* 开头的 token`);
+      log(`  如无迁移需求，直接回车跳过即可。`);
+      wsToken = await ask(rl, 'StoryClaw Workspace Auth Token (ws_...，可留空)', '');
+    }
+
     const envContent = [
       `PORT=${port}`,
       ``,
@@ -103,6 +123,10 @@ async function main() {
       `# X2C 平台`,
       `X2C_API_KEY=${x2cKey}`,
       `X2C_API_URL=https://eumfmgwxwjyagsvqloac.supabase.co/functions/v1/open-api`,
+      ``,
+      `# StoryClaw Workspace（用于导入迁移项目，可选）`,
+      `# 获取方式：storyclaw.com → Settings → API Tokens → 复制 ws_* token`,
+      `STORYCLAW_WORKSPACE_AUTH_TOKEN=${wsToken}`,
       ``,
       `# 轮询配置`,
       `POLL_INTERVAL_MS=5000`,

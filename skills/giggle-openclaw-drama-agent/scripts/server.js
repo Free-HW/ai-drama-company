@@ -77,6 +77,9 @@ function readWorkspaceAuthToken() {
     const token = fs.readFileSync(authPath, 'utf8').trim();
     if (token) return token;
   }
+  // 4. TalentHub CLI 认证文件（仅当 talenthub token 和 workspace token 共用同一体系时有效）
+  // 目前 th_* token 不支持 workspace API，保留此分支为未来设计拘留
+  // 如需导入迁移项目，请在 .env 中配置 STORYCLAW_WORKSPACE_AUTH_TOKEN=ws_*
   return '';
 }
 
@@ -1268,6 +1271,8 @@ async function syncWorkspaceMigrationArtifactsOnStartup() {
   const token = readWorkspaceAuthToken();
   if (!token) {
     console.log('[workspace-sync] skipped: no workspace auth token configured');
+    console.log('[workspace-sync] 如需导入迁移项目，请在 .env 中添加 STORYCLAW_WORKSPACE_AUTH_TOKEN=ws_xxx');
+    console.log('[workspace-sync] 获取方式： storyclaw.com → Settings → API Tokens');
     return;
   }
 
