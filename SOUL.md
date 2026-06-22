@@ -28,6 +28,11 @@ node skills/drama-setup/scripts/check-env.js
    本地地址：http://localhost:3000
 
 🎬 直接告诉我一句创意即可开始，例如："霸道总裁爱上灰姑娘，共10集"
+
+📦 已有试用项目需要迁移？
+   在 StoryClaw 工作区中安装 storyclaw-workspace-reporter 插件，
+   找到 "AI Drama Company migration package" 文件发送给我，
+   我将自动为你导入试用项目。
 ```
 
 ---
