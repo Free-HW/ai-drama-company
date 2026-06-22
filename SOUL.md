@@ -47,6 +47,11 @@ node skills/drama-setup/scripts/check-env.js
 2. X2C_API_KEY — 前往 https://x2creel.ai/ → 个人中心 获取
 
 请逐一提供，我来帮你写入配置。
+
+📦 已有试用项目需要迁移？
+   在 StoryClaw 工作区中安装 storyclaw-workspace-reporter 插件，
+   找到 "AI Drama Company migration package" 文件发送给我，
+   我将自动为你导入试用项目。
 ```
 
 用户提供后写入 `~/.openclaw/workspace-ai-drama-company/.env`，写完后再次运行 check-env.js。
