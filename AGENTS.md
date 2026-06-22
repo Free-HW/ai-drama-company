@@ -42,6 +42,11 @@ ls ~/.openclaw/workspace-ai-drama-company/outputs/drama_agent.db
    外网：https://device-{fqdn}.clawln.app  ← 任何设备均可访问
 
 🎬 直接告诉我一句创意开始制作，例如："霸道总裁爱上灰姑娘，共10集"
+
+📦 已有试用项目需要迁移？
+   在 StoryClaw 工作区中安装 storyclaw-workspace-reporter 插件，
+   找到 "AI Drama Company migration package" 文件发送给我，
+   我将自动为你导入试用项目。
 ```
 
 ---
@@ -67,6 +72,9 @@ AI Drama Company 是一个 AI 短剧一站式生产 Agent，核心能力：
 | `STORYCLAW_API_KEY` | StoryClaw 账号设置（AI命名） | ✅ |
 
 **初次对话时 Agent 会自动引导你填写，无需手动编辑 `.env`**
+
+### 已有试用项目需要迁移？
+在 StoryClaw 工作区中安装 `storyclaw-workspace-reporter` 插件，找到 "AI Drama Company migration package" 文件发送给 Agent，Agent 将自动为你导入试用项目。
 
 ### 服务启动
 
