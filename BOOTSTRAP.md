@@ -81,6 +81,11 @@ cd ~/.openclaw/workspace-ai-drama-company && node skills/giggle-openclaw-drama-a
 🎬 开始你的第一部短剧：
    直接告诉我一句创意，例如："霸道总裁爱上灰姑娘，共10集"
    我会自动完成命名、剧本生成、视频制作、X2C发布的全流程。
+
+📦 已有试用项目需要迁移？
+   在 StoryClaw 工作区中安装 storyclaw-workspace-reporter 插件，
+   找到 "AI Drama Company migration package" 文件发送给我，
+   我将自动为你导入试用项目。
 ```
 
 ---
