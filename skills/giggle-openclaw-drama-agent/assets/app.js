@@ -634,7 +634,20 @@
                      font-size:11px;color:#5e5e66;pointer-events:none;">⌕</span>
       </div>
       <div id="proj-list" style="overflow-y:auto;flex:1;min-height:0;display:flex;flex-direction:column;gap:10px;padding-right:2px;">
-        ${cards || '<div class="agent-card idle"><div class="agent-task">暂无项目数据</div></div>'}
+        ${cards || `<div class="agent-card idle" style="padding:20px 16px;line-height:1.8;">
+          <div class="agent-task" style="font-size:13px;font-weight:600;margin-bottom:10px;color:#e8b339;">🎬 欢迎使用 AI Drama Company</div>
+          <div style="font-size:12px;color:#a0a0aa;">
+            在上方输入短剧创意，一键开始自动生产短剧。
+          </div>
+          <div style="margin-top:14px;padding-top:14px;border-top:1px solid #1f1f24;font-size:11.5px;color:#6e6e7a;line-height:1.9;">
+            <span style="color:#c0a060;font-weight:600;">📦 已有试用项目需要迁移？</span><br/>
+            请在 <strong style="color:#d4d4d8;">StoryClaw 工作区</strong> 中安装
+            <code style="background:#1a1a20;padding:1px 5px;border-radius:3px;color:#a78bfa;">storyclaw-workspace-reporter</code>
+            插件，然后在工作区文件中找到
+            <code style="background:#1a1a20;padding:1px 5px;border-radius:3px;color:#a78bfa;">AI Drama Company migration package</code>
+            文件，发送给 AI 助手，助手将为你自动导入试用项目。
+          </div>
+        </div>`}
       </div>
     `;
 
