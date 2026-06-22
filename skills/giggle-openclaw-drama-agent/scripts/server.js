@@ -58,7 +58,7 @@ function readWorkspaceAuthToken() {
   // 1. 环境变量（外部开发 / Codex 场景）
   const directToken = String(process.env.STORYCLAW_WORKSPACE_AUTH_TOKEN || '').trim();
   if (directToken) return directToken;
-  // 2. 主 workspace 的 .auth（OpenClaw 市场安装标准位置）
+  // 2. 主 workspace 的 storyclaw-workspace-reporter/.auth
   const mainWorkspaceAuth = path.join(
     require('os').homedir(),
     '.openclaw',
@@ -71,15 +71,22 @@ function readWorkspaceAuthToken() {
     const token = fs.readFileSync(mainWorkspaceAuth, 'utf8').trim();
     if (token) return token;
   }
-  // 3. 本 agent workspace 的 .auth（备用）
+  // 3. 本 agent workspace 的 storyclaw-workspace-reporter/.auth
+  //    StoryClaw 平台安装 agent 时会自动为同 workspace 下的 skill provision .auth
+  const agentWorkspaceAuth = path.join(
+    path.resolve(__dirname, '..', '..', '..'),  // workspace root
+    'skills', 'storyclaw-workspace-reporter', '.auth',
+  );
+  if (fs.existsSync(agentWorkspaceAuth)) {
+    const token = fs.readFileSync(agentWorkspaceAuth, 'utf8').trim();
+    if (token) return token;
+  }
+  // 4. 当前 skill 目录旁的 .auth（备用 fallback）
   const authPath = String(process.env.STORYCLAW_WORKSPACE_AUTH_PATH || '').trim() || WORKSPACE_AUTH_FALLBACK_PATH;
   if (fs.existsSync(authPath)) {
     const token = fs.readFileSync(authPath, 'utf8').trim();
     if (token) return token;
   }
-  // 4. TalentHub CLI 认证文件（仅当 talenthub token 和 workspace token 共用同一体系时有效）
-  // 目前 th_* token 不支持 workspace API，保留此分支为未来设计拘留
-  // 如需导入迁移项目，请在 .env 中配置 STORYCLAW_WORKSPACE_AUTH_TOKEN=ws_*
   return '';
 }
 

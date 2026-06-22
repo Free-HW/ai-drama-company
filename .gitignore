@@ -1,2 +1,8 @@
 node_modules/
 .env
+# Workspace auth tokens — provisioned per-install by StoryClaw, never committed
+skills/**/.auth
+outputs/
+logs/
+*.log
+*.db
