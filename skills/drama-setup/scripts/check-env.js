@@ -464,7 +464,7 @@ if (!externalUrl) {
 
 // ── 输出结果 ─────────────────────────────────────────────────
 process.stdout.write(JSON.stringify({
-  ready: serviceOk && missingKeys.length === 0 && dbReady,
+  ready: serviceOk && dbReady,  // API Keys 缺失不影响 ready，服务就绪即可用
   serviceOk,
   serviceAutoStarted,
   npmInstallOk,
