@@ -181,7 +181,7 @@ serviceOk = checkService() && isServiceBoundToCurrentWorkspace();
 if (!serviceOk) log("⚠️ 服务未运行或绑定到旧 workspace，将重新启动");
 
 let serviceAutoStarted = false;
-if (!serviceOk && missingKeys.length === 0 && dbReady && npmInstallOk) {
+if (!serviceOk && dbReady && npmInstallOk) {
   const serverScript = path.join(SKILL_DIR, "scripts", "server.js");
   const logFile = path.join(CLAW_DIR, "ai-drama.log");
   fs.mkdirSync(CLAW_DIR, { recursive: true });
