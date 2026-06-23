@@ -245,10 +245,14 @@ WantedBy=default.target
     }
   }
 
-  await new Promise(r => setTimeout(r, 3000));
-  serviceOk = checkService();
+  // 轮询等待服务就绪（最多15秒）
+  for (let i = 0; i < 5; i++) {
+    await new Promise(r => setTimeout(r, 3000));
+    serviceOk = checkService();
+    if (serviceOk) break;
+  }
   serviceAutoStarted = true;
-  log(serviceOk ? (usedSystemd ? "✅ 服务已通过 systemd 启动" : "✅ 服务已后台启动") : "⏳ 服务启动中（等待几秒后重试）");
+  log(serviceOk ? (usedSystemd ? "✅ 服务已通过 systemd 启动" : "✅ 服务已后台启动") : "⏳ 服务启动中（稍后刷新页面）");
 }
 
 // ── Step 6: 外网穿透 ─────────────────────────────────────────
@@ -389,6 +393,11 @@ WantedBy=default.target
 }
 
 // 主流程：获取外网地址
+// cloudflared 只在 Node.js 服务健康后才启动，避免 tunnel 先通但服务未就绪 → 502
+if (!serviceOk) {
+  log("⚠️ 服务未就绪，跳过外网穿透配置（服务就绪后重新激活 Agent 即可自动配置）");
+} else {
+
 let tunnelConfig = getTunnelConfig();
 
 if (tunnelConfig?.public_url) {
@@ -450,6 +459,8 @@ if (!externalUrl) {
     }
   }
 }
+
+} // end if (serviceOk) — 外网穿透主流程
 
 // ── 输出结果 ─────────────────────────────────────────────────
 process.stdout.write(JSON.stringify({
