@@ -489,7 +489,9 @@ function buildStatusMessage() {
     }
     lines.push("🎬 配置完成后告诉我一句创意即可开始，例如：霸道总裁爱上灰姑娘，共10集");
     lines.push("");
-    lines.push("📦 已有试用项目需要迁移？在 StoryClaw 工作区安装 storyclaw-workspace-reporter 插件，找到 \"AI Drama Company migration package\" 文件发给我，我将自动导入。");
+    lines.push("📦 已有试用项目需要迁移？");
+    lines.push("   在 StoryClaw 工作区安装 storyclaw-workspace-reporter 插件，");
+    lines.push("   找到 \"AI Drama Company migration package\" 文件发给我，我将自动导入。");
   } else if (!npmInstallOk) {
     lines.push("❌ 依赖安装失败，请手动运行：");
     lines.push("   cd ~/.openclaw/workspace-ai-drama-company && npm install");
