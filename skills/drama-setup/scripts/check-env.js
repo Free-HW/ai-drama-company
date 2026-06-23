@@ -113,7 +113,7 @@ const missingKeys = USER_KEYS.filter(({ key }) => {
 
 // ── Step 4: 初始化数据库 ─────────────────────────────────────
 let dbReady = fs.existsSync(DB_FILE);
-if (!dbReady && missingKeys.length === 0 && npmInstallOk) {
+if (!dbReady && npmInstallOk) {
   try {
     fs.mkdirSync(path.join(WORKSPACE_DIR, "outputs"), { recursive: true });
     execSync(`node ${path.join(SKILL_DIR, "scripts", "init_db.js")}`, {
@@ -462,9 +462,51 @@ if (!externalUrl) {
 
 } // end if (serviceOk) — 外网穿透主流程
 
+// ── 生成给 LLM 的人类可读状态消息（弱模型友好，直接转发给用户）─────
+function buildStatusMessage() {
+  const lines = [];
+
+  if (serviceOk) {
+    lines.push("✅ AI Drama Company 已就绪！");
+    lines.push("");
+    if (externalUrl) {
+      lines.push("🌐 Dashboard 地址（任何设备可访问）：");
+      lines.push(`   外网地址：${externalUrl}`);
+      lines.push(`   本地地址：http://localhost:3000`);
+    } else {
+      lines.push(`🌐 本地地址：http://localhost:3000`);
+      lines.push("   ⚠️ 外网地址配置中，稍后重新激活 Agent 即可获取");
+    }
+    lines.push("");
+    if (missingKeys.length > 0) {
+      lines.push("⚙️ 以下 API Key 尚未配置（配置后可开始制作短剧）：");
+      for (const k of missingKeys) {
+        if (k === "GIGGLE_API_KEY") lines.push("   • GIGGLE_API_KEY — 前往 giggle.pro 开发者后台获取");
+        if (k === "X2C_API_KEY") lines.push("   • X2C_API_KEY — 前往 x2creel.ai → 个人中心获取");
+      }
+      lines.push("   直接把 Key 发给我，我来帮你写入配置。");
+      lines.push("");
+    }
+    lines.push("🎬 配置完成后告诉我一句创意即可开始，例如：霸道总裁爱上灰姑娘，共10集");
+    lines.push("");
+    lines.push("📦 已有试用项目需要迁移？在 StoryClaw 工作区安装 storyclaw-workspace-reporter 插件，找到 \"AI Drama Company migration package\" 文件发给我，我将自动导入。");
+  } else if (!npmInstallOk) {
+    lines.push("❌ 依赖安装失败，请手动运行：");
+    lines.push("   cd ~/.openclaw/workspace-ai-drama-company && npm install");
+  } else if (!dbReady) {
+    lines.push("❌ 数据库初始化失败，请手动运行：");
+    lines.push("   node skills/giggle-openclaw-drama-agent/scripts/init_db.js");
+  } else {
+    lines.push("⏳ 服务启动中，请等待 10 秒后重新发消息给我。");
+    lines.push(`   如持续失败，请查看日志：cat ~/.claw/ai-drama.log`);
+  }
+
+  return lines.join("\n");
+}
+
 // ── 输出结果 ─────────────────────────────────────────────────
 process.stdout.write(JSON.stringify({
-  ready: serviceOk && dbReady,  // API Keys 缺失不影响 ready，服务就绪即可用
+  ready: serviceOk && dbReady,
   serviceOk,
   serviceAutoStarted,
   npmInstallOk,
@@ -476,4 +518,5 @@ process.stdout.write(JSON.stringify({
   localUrl: "http://localhost:3000",
   workspaceDir: WORKSPACE_DIR,
   steps,
+  statusMessage: buildStatusMessage(),
 }, null, 2) + "\n");
