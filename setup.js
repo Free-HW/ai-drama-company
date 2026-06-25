@@ -122,7 +122,7 @@ async function main() {
       ``,
       `# X2C 平台`,
       `X2C_API_KEY=${x2cKey}`,
-      `X2C_API_URL=https://eumfmgwxwjyagsvqloac.supabase.co/functions/v1/open-api`,
+      `X2C_API_URL=https://ukbyfmmerxhlghlhbxtz.supabase.co/functions/v1/open-api`,
       ``,
       `# StoryClaw Workspace（用于导入迁移项目，可选）`,
       `# 获取方式：storyclaw.com → Settings → API Tokens → 复制 ws_* token`,

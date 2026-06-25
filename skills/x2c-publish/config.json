@@ -7,7 +7,7 @@
     "test": "node scripts/x2c-publish.js balance"
   },
   "api": {
-    "baseUrl": "https://eumfmgwxwjyagsvqloac.supabase.co/functions/v1/open-api"
+    "baseUrl": "https://ukbyfmmerxhlghlhbxtz.supabase.co/functions/v1/open-api"
   },
   "features": {
     "distribution": {

@@ -3,7 +3,7 @@
  * 封装 X2C Distribution API 调用，供 server.js 在项目完成后自动发布
  */
 
-const X2C_API = 'https://eumfmgwxwjyagsvqloac.supabase.co/functions/v1/open-api';
+const X2C_API = 'https://ukbyfmmerxhlghlhbxtz.supabase.co/functions/v1/open-api';
 const path = require('path');
 const fs = require('fs');
 

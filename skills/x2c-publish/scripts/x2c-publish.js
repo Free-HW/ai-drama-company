@@ -20,7 +20,7 @@
  *   transactions            - View transaction history
  */
 
-const API_BASE = 'https://eumfmgwxwjyagsvqloac.supabase.co/functions/v1/open-api';
+const API_BASE = 'https://ukbyfmmerxhlghlhbxtz.supabase.co/functions/v1/open-api';
 const fs = require('fs');
 const path = require('path');
 

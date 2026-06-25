@@ -108,7 +108,7 @@ Step 4: distribution/publish → Submit with the public_url from Step 3
 ## API Endpoint
 
 ```
-POST https://eumfmgwxwjyagsvqloac.supabase.co/functions/v1/open-api
+POST https://ukbyfmmerxhlghlhbxtz.supabase.co/functions/v1/open-api
 ```
 
 Headers:
@@ -132,7 +132,7 @@ Headers:
 ### 1. Get Categories
 
 ```bash
-curl -X POST https://eumfmgwxwjyagsvqloac.supabase.co/functions/v1/open-api \
+curl -X POST https://ukbyfmmerxhlghlhbxtz.supabase.co/functions/v1/open-api \
   -H "Content-Type: application/json" \
   -H "X-API-Key: x2c_sk_xxx" \
   -d '{
@@ -146,7 +146,7 @@ curl -X POST https://eumfmgwxwjyagsvqloac.supabase.co/functions/v1/open-api \
 ### 2. Get Upload URLs
 
 ```bash
-curl -X POST https://eumfmgwxwjyagsvqloac.supabase.co/functions/v1/open-api \
+curl -X POST https://ukbyfmmerxhlghlhbxtz.supabase.co/functions/v1/open-api \
   -H "Content-Type: application/json" \
   -H "X-API-Key: x2c_sk_xxx" \
   -d '{
@@ -178,7 +178,7 @@ curl -X PUT "<upload_url>" \
 ### 4. Publish Project
 
 ```bash
-curl -X POST https://eumfmgwxwjyagsvqloac.supabase.co/functions/v1/open-api \
+curl -X POST https://ukbyfmmerxhlghlhbxtz.supabase.co/functions/v1/open-api \
   -H "Content-Type: application/json" \
   -H "X-API-Key: x2c_sk_xxx" \
   -d '{
@@ -207,7 +207,7 @@ curl -X POST https://eumfmgwxwjyagsvqloac.supabase.co/functions/v1/open-api \
 ### 5. Query Status
 
 ```bash
-curl -X POST https://eumfmgwxwjyagsvqloac.supabase.co/functions/v1/open-api \
+curl -X POST https://ukbyfmmerxhlghlhbxtz.supabase.co/functions/v1/open-api \
   -H "Content-Type: application/json" \
   -H "X-API-Key: x2c_sk_xxx" \
   -d '{
@@ -225,7 +225,7 @@ curl -X POST https://eumfmgwxwjyagsvqloac.supabase.co/functions/v1/open-api \
 ### 6. Add Episodes
 
 ```bash
-curl -X POST https://eumfmgwxwjyagsvqloac.supabase.co/functions/v1/open-api \
+curl -X POST https://ukbyfmmerxhlghlhbxtz.supabase.co/functions/v1/open-api \
   -H "Content-Type: application/json" \
   -H "X-API-Key: x2c_sk_xxx" \
   -d '{
@@ -238,7 +238,7 @@ curl -X POST https://eumfmgwxwjyagsvqloac.supabase.co/functions/v1/open-api \
 ### 7. List Projects
 
 ```bash
-curl -X POST https://eumfmgwxwjyagsvqloac.supabase.co/functions/v1/open-api \
+curl -X POST https://ukbyfmmerxhlghlhbxtz.supabase.co/functions/v1/open-api \
   -H "Content-Type: application/json" \
   -H "X-API-Key: x2c_sk_xxx" \
   -d '{
@@ -285,7 +285,7 @@ Query balances, claim X2C, swap to USDC, withdraw, and view transaction history.
 ### 1. Get Wallet Balance
 
 ```bash
-curl -X POST https://eumfmgwxwjyagsvqloac.supabase.co/functions/v1/open-api \
+curl -X POST https://ukbyfmmerxhlghlhbxtz.supabase.co/functions/v1/open-api \
   -H "Content-Type: application/json" \
   -H "X-API-Key: x2c_sk_xxx" \
   -d '{"action": "wallet/balance"}'
@@ -304,7 +304,7 @@ curl -X POST https://eumfmgwxwjyagsvqloac.supabase.co/functions/v1/open-api \
 ### 2. Claim X2C
 
 ```bash
-curl -X POST https://eumfmgwxwjyagsvqloac.supabase.co/functions/v1/open-api \
+curl -X POST https://ukbyfmmerxhlghlhbxtz.supabase.co/functions/v1/open-api \
   -H "Content-Type: application/json" \
   -H "X-API-Key: x2c_sk_xxx" \
   -d '{
@@ -321,7 +321,7 @@ curl -X POST https://eumfmgwxwjyagsvqloac.supabase.co/functions/v1/open-api \
 ### 3. Swap X2C to USDC
 
 ```bash
-curl -X POST https://eumfmgwxwjyagsvqloac.supabase.co/functions/v1/open-api \
+curl -X POST https://ukbyfmmerxhlghlhbxtz.supabase.co/functions/v1/open-api \
   -H "Content-Type: application/json" \
   -H "X-API-Key: x2c_sk_xxx" \
   -d '{
@@ -333,7 +333,7 @@ curl -X POST https://eumfmgwxwjyagsvqloac.supabase.co/functions/v1/open-api \
 ### 4. Withdraw USDC
 
 ```bash
-curl -X POST https://eumfmgwxwjyagsvqloac.supabase.co/functions/v1/open-api \
+curl -X POST https://ukbyfmmerxhlghlhbxtz.supabase.co/functions/v1/open-api \
   -H "Content-Type: application/json" \
   -H "X-API-Key: x2c_sk_xxx" \
   -d '{
@@ -352,7 +352,7 @@ curl -X POST https://eumfmgwxwjyagsvqloac.supabase.co/functions/v1/open-api \
 ### 5. Transaction History
 
 ```bash
-curl -X POST https://eumfmgwxwjyagsvqloac.supabase.co/functions/v1/open-api \
+curl -X POST https://ukbyfmmerxhlghlhbxtz.supabase.co/functions/v1/open-api \
   -H "Content-Type: application/json" \
   -H "X-API-Key: x2c_sk_xxx" \
   -d '{

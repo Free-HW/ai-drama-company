@@ -84,7 +84,7 @@ ai-drama-company/
 | `OPENCLAW_GATEWAY_URL` | ✅ | OpenClaw Gateway 地址 | `http://localhost:18789` |
 | `OPENCLAW_GATEWAY_PASSWORD` | ✅ | Gateway 认证密码 | `xxxxx` |
 | `X2C_API_KEY` | ✅ | X2C 平台 API Key | `x2c_sk_xxx` |
-| `X2C_API_URL` | — | X2C API 地址 | `https://eumfmgwxwjyagsvqloac.supabase.co/functions/v1/open-api` |
+| `X2C_API_URL` | — | X2C API 地址 | `https://ukbyfmmerxhlghlhbxtz.supabase.co/functions/v1/open-api` |
 | `STORYCLAW_API_KEY` | ✅ | StoryClaw LLM API Key（用于 AI 命名） | `xxx` |
 | `STORYCLAW_API_URL` | — | StoryClaw LLM API 地址 | `https://llm-ap.gqapi.com` |
 | `POLL_INTERVAL_MS` | — | 轮询间隔，默认 `5000` | `5000` |

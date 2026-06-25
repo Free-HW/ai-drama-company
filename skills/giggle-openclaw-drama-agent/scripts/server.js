@@ -47,7 +47,7 @@ app.use(express.json({ limit: '2mb' }));
 app.use(express.static(path.join(__dirname, '..', 'assets')));
 
 
-const X2C_API_ENDPOINT = 'https://eumfmgwxwjyagsvqloac.supabase.co/functions/v1/open-api';
+const X2C_API_ENDPOINT = 'https://ukbyfmmerxhlghlhbxtz.supabase.co/functions/v1/open-api';
 const DOT_ENV_PATH = path.join(__dirname, '..', '..', '..', '.env');
 const WORKSPACE_AUTH_FALLBACK_PATH = path.join(__dirname, '..', '.auth');
 const WORKSPACE_MIGRATION_TAG = 'drama-agent-migration';
