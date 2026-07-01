@@ -199,16 +199,15 @@ WorkingDirectory=${WORKSPACE_DIR}
 EnvironmentFile=${ENV_FILE}
 ExecStart=${NODE_BIN} skills/giggle-openclaw-drama-agent/scripts/server.js
 Restart=always
-RestartSec=5
+RestartSec=10
 StandardOutput=append:${logFile}
 StandardError=append:${logFile}
 OOMScoreAdjust=-1000
 LimitNOFILE=65536
 LimitNPROC=infinity
 TimeoutStopSec=300
-TimeoutStartSec=60
-StartLimitIntervalSec=10
-StartLimitBurst=5
+TimeoutStartSec=120
+StartLimitIntervalSec=0
 
 [Install]
 WantedBy=default.target
